@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(openspec list:*)"
+      "Bash(openspec list:*)",
+      "Bash(git -C:*)",
+      "Bash(cd /d/claude-stuff && dotnet build VideoJam.sln 2>&1)",
+      "Bash(cd /d/claude-stuff && dotnet build VideoJam/VideoJam.csproj 2>&1)",
+      "Bash(cd /d/claude-stuff && dotnet test VideoJam.Tests/VideoJam.Tests.csproj --verbosity normal 2>&1)",
+      "Bash(tail:*)"
     ]
   }
 }

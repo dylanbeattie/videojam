@@ -1,20 +1,38 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  Project: VideoJam — Windows 11 WPF desktop application for live musical performance
+  Tech stack: .NET 10, C#, WPF, NAudio 2.2.x, LibVLCSharp 3.x, VideoLAN.LibVLC.Windows 3.x, System.Text.Json, Microsoft.Extensions.Logging 8.x
+  Testing: xUnit 2.x, no mocking library needed (services tested with real file system via temp folders)
+  Architecture: MVVM (no framework — plain INotifyPropertyChanged + RelayCommand), strict separation of Engine and UI layers
+  Key constraints:
+    - Audio must NEVER stop due to a video failure — subsystems are architecturally isolated
+    - 10ms start-time synchronisation across all audio stems and video streams
+    - Fire-and-forget: once GO is pressed, operator does nothing until song ends
+    - No code-behind logic beyond view lifecycle glue
+    - Async all the way; never block the UI thread
+    - Dispose audio/video resources properly
+  Solution layout:
+    - VideoJam/          — WPF Application project (the main app, lives in VideoJam/ subfolder)
+    - VideoJam.Tests/    — xUnit test project
+  Source folders inside VideoJam/:
+    - Engine/            — PlaybackEngine, AudioEngine, VideoEngine, SyncCoordinator, DisplayManager
+    - Model/             — Show, SongEntry, ChannelSettings, AppState, runtime records
+    - Services/          — ShowFileService, SongScanner, PathResolver
+    - UI/                — MainWindow, VlcDisplayWindow, ViewModels
+    - Input/             — HotkeyService
+  Conventions:
+    - All paths in .show files are relative to the .show file location
+    - Channel IDs: filename-only for stems, "{filename}:audio" for video audio tracks
+    - XML doc comments on all public APIs
+    - Named constants — no magic numbers
+    - Semantic versioning; version pinned in Directory.Build.props
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+rules:
+  proposal:
+    - Include a "Non-goals for this phase" section to prevent scope creep
+    - Call out the primary technical risk explicitly
+  tasks:
+    - Each task must be independently verifiable (testable or manually runnable)
+    - Group tasks: Implementation tasks first, then unit test tasks, then integration/manual verification
+    - Maximum granularity: one class or one focused behaviour per task

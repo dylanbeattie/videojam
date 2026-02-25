@@ -1,0 +1,55 @@
+<Window x:Class="VideoJam.UI.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="VideoJam — Phase 1 Audio Harness"
+        Height="220" Width="420"
+        ResizeMode="CanMinimize">
+
+    <StackPanel Margin="20" VerticalAlignment="Center">
+
+        <!-- Status -->
+        <TextBlock x:Name="StatusLabel"
+                   Text="Status: Idle"
+                   FontSize="16"
+                   FontWeight="Bold"
+                   HorizontalAlignment="Center"
+                   Margin="0,0,0,16" />
+
+        <!-- Currently loaded folder -->
+        <TextBlock x:Name="FolderLabel"
+                   Text="No folder loaded"
+                   FontSize="11"
+                   Foreground="Gray"
+                   TextTrimming="CharacterEllipsis"
+                   HorizontalAlignment="Center"
+                   Margin="0,0,0,20" />
+
+        <!-- Transport controls -->
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+
+            <Button x:Name="LoadButton"
+                    Content="Load Folder"
+                    Width="110" Height="36"
+                    Margin="0,0,8,0"
+                    Click="OnLoadClicked" />
+
+            <Button x:Name="PlayButton"
+                    Content="▶  Play"
+                    Width="90" Height="36"
+                    Margin="0,0,8,0"
+                    IsEnabled="False"
+                    Click="OnPlayClicked" />
+
+            <Button x:Name="StopButton"
+                    Content="■  Stop"
+                    Width="90" Height="36"
+                    IsEnabled="False"
+                    Click="OnStopClicked" />
+
+        </StackPanel>
+
+    </StackPanel>
+</Window>
