@@ -1,13 +1,12 @@
 namespace VideoJam.Model;
 
 /// <summary>Distinguishes a pure audio stem from an audio track extracted from a video file.</summary>
-public enum AudioChannelType
-{
-    /// <summary>A standalone audio stem file (.wav, .mp3, .aiff).</summary>
-    Stem,
+public enum AudioChannelType {
+	/// <summary>A standalone audio stem file (.wav, .mp3, .aiff).</summary>
+	Stem,
 
-    /// <summary>An audio track decoded from a video file (.mp4).</summary>
-    VideoAudio,
+	/// <summary>An audio track decoded from a video file (.mp4).</summary>
+	VideoAudio,
 }
 
 /// <summary>
@@ -22,9 +21,9 @@ public enum AudioChannelType
 /// </param>
 /// <param name="Type">Whether this channel comes from a stem or a video file.</param>
 public sealed record AudioChannelManifest(
-    FileInfo File,
-    string ChannelId,
-    AudioChannelType Type);
+	FileInfo File,
+	string ChannelId,
+	AudioChannelType Type);
 
 /// <summary>
 /// Describes a video file resolved from a song folder scan, including its target display.
@@ -39,9 +38,9 @@ public sealed record AudioChannelManifest(
 /// (e.g. <c>_lyrics</c>, <c>_visuals</c>). Empty string if no suffix.
 /// </param>
 public sealed record VideoFileManifest(
-    FileInfo File,
-    int DisplayIndex,
-    string Suffix);
+	FileInfo File,
+	int DisplayIndex,
+	string Suffix);
 
 /// <summary>
 /// The complete runtime description of a song folder, produced by <see cref="Services.SongScanner"/>.
@@ -52,7 +51,7 @@ public sealed record VideoFileManifest(
 /// <param name="AudioChannels">All audio channels found in the folder.</param>
 /// <param name="VideoFiles">All video files found in the folder.</param>
 public sealed record SongManifest(
-    string SongName,
-    DirectoryInfo Folder,
-    IReadOnlyList<AudioChannelManifest> AudioChannels,
-    IReadOnlyList<VideoFileManifest> VideoFiles);
+	string SongName,
+	DirectoryInfo Folder,
+	IReadOnlyList<AudioChannelManifest> AudioChannels,
+	IReadOnlyList<VideoFileManifest> VideoFiles);

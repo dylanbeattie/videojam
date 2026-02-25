@@ -4,6 +4,5 @@ namespace VideoJam.Engine;
 /// Orchestrates the start-time synchronisation sequence between AudioEngine and VideoEngine.
 /// Stub — implementation in Phase 2.
 /// </summary>
-internal sealed class SyncCoordinator
-{
+internal sealed class SyncCoordinator {
 }

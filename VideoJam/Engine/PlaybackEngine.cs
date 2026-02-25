@@ -5,6 +5,5 @@ namespace VideoJam.Engine;
 /// Owns playback state and coordinates AudioEngine, VideoEngine, and SyncCoordinator.
 /// Stub — implementation in Phase 6.
 /// </summary>
-internal sealed class PlaybackEngine
-{
+internal sealed class PlaybackEngine {
 }

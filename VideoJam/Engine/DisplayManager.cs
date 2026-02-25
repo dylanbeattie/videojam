@@ -4,6 +4,5 @@ namespace VideoJam.Engine;
 /// Enumerates hardware displays and manages VlcDisplayWindow placement.
 /// Stub — implementation in Phase 3.
 /// </summary>
-internal sealed class DisplayManager
-{
+internal sealed class DisplayManager {
 }
