@@ -74,8 +74,8 @@ internal sealed class AudioEngine : IDisposable {
 		var sampleProviders = new List<ISampleProvider>();
 
 		foreach (AudioChannelManifest channel in manifest.AudioChannels) {
-			ISampleProvider reader = CreateReader(channel.File);
-			_readers.Add((IDisposable) reader);
+			AudioReader reader = CreateReader(channel.File);
+			_readers.Add(reader);
 
 			// Resample to the common mix format if needed.
 			ISampleProvider resampled = EnsureMixFormat(reader);
@@ -151,31 +151,52 @@ internal sealed class AudioEngine : IDisposable {
 	/// Creates the appropriate NAudio reader for the given file,
 	/// based on its extension.
 	/// </summary>
-	private static ISampleProvider CreateReader(FileInfo file) {
+	private static AudioReader CreateReader(FileInfo file) {
 		string ext = file.Extension;
 
-		if (ext.Equals(".aiff", StringComparison.OrdinalIgnoreCase))
-			return new AiffFileReader(file.FullName).ToSampleProvider();
+		if (ext.Equals(".aiff", StringComparison.OrdinalIgnoreCase)) {
+			var aiffReader = new AiffFileReader(file.FullName);
+			return new AudioReader(owner: aiffReader, source: aiffReader.ToSampleProvider());
+		}
 
-		if (ext.Equals(".mp4", StringComparison.OrdinalIgnoreCase))
-			return new MediaFoundationReader(file.FullName).ToSampleProvider();
+		if (ext.Equals(".mp4", StringComparison.OrdinalIgnoreCase)) {
+			var mfReader = new MediaFoundationReader(file.FullName);
+			return new AudioReader(owner: mfReader, source: mfReader.ToSampleProvider());
+		}
 
-		// .wav and .mp3 — AudioFileReader is NAudio's auto-detecting reader.
-		return new AudioFileReader(file.FullName);
+		// .wav and .mp3 — AudioFileReader implements both IDisposable and ISampleProvider.
+		var afReader = new AudioFileReader(file.FullName);
+		return new AudioReader(owner: afReader, source: afReader);
 	}
 
 	/// <summary>
-	/// Wraps <paramref name="source"/> in a resampler if its format does not
-	/// already match <see cref="MixFormat"/>.
+	/// Ensures <paramref name="source"/> matches <see cref="MixFormat"/> by
+	/// applying sample-rate conversion and/or channel-count upmix as needed,
+	/// each as a distinct step.
 	/// </summary>
+	/// <exception cref="NotSupportedException">
+	/// Thrown if <paramref name="source"/> is stereo but <see cref="MixFormat"/> is mono,
+	/// which is not a supported configuration for this application.
+	/// </exception>
 	private static ISampleProvider EnsureMixFormat(ISampleProvider source) {
-		WaveFormat fmt = source.WaveFormat;
+		ISampleProvider result = source;
 
-		if (fmt.SampleRate == MixFormat.SampleRate &&
-			fmt.Channels == MixFormat.Channels)
-			return source;
+		// Step 1 — Resample if sample rate differs. WdlResamplingSampleProvider
+		// preserves channel count; it does not perform upmixing.
+		if (result.WaveFormat.SampleRate != MixFormat.SampleRate)
+			result = new WdlResamplingSampleProvider(result, MixFormat.SampleRate);
 
-		return new WdlResamplingSampleProvider(source, MixFormat.SampleRate);
+		// Step 2 — Upmix mono → stereo if the mix format requires it.
+		if (result.WaveFormat.Channels == 1 && MixFormat.Channels == 2)
+			result = new MonoToStereoSampleProvider(result);
+
+		// Guard: a stereo source cannot be downmixed to a mono mix format here.
+		if (result.WaveFormat.Channels > MixFormat.Channels)
+			throw new NotSupportedException(
+				$"Source has {result.WaveFormat.Channels} channels but the mix format has " +
+				$"{MixFormat.Channels}. Downmixing is not supported.");
+
+		return result;
 	}
 
 	/// <summary>

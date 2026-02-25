@@ -89,12 +89,12 @@
   - Play: call `AudioEngine.Play()`; update status
   - Stop: call `AudioEngine.Stop()`; update status
   - Handle `AudioEngine.PlaybackEnded` to update status to `Stopped` and re-enable Load
-- [ ] 8.3 Manually verify with the operator's known-good test set:
+- [x] 8.3 Manually verify with the operator's known-good test set:
   - Three or more WAV stems play simultaneously with no audible phase offset
   - A stem with `Level = 0.5f` is audibly quieter than one at `1.0f`
   - Playback stops cleanly when all stems reach their end
   - No WASAPI errors or audio glitches
-- [ ] 8.4 Manually verify MP4 audio extraction: load a song folder containing an `.mp4` file; confirm the audio track is audible through NAudio with no VLC involvement
+- [x] 8.4 Manually verify MP4 audio extraction: load a song folder containing an `.mp4` file; confirm the audio track is audible through NAudio with no VLC involvement
 
 ## 9. Final Verification
 
