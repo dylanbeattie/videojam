@@ -56,12 +56,14 @@ All architectural decisions documented in the Technical Specification (§2) are 
 
 ### D4 — `AudioFileReader` vs `AiffFileReader` selection
 
-**Decision:** File reader is chosen by extension at `Load()` time:
+**Decision:** File reader is chosen by `channel.File.Extension` (case-insensitive) at `Load()` time:
 - `.wav`, `.mp3` → `AudioFileReader` (NAudio's auto-detecting reader, handles both)
 - `.aiff` → `AiffFileReader` (explicit, as `AudioFileReader` does not reliably detect AIFF)
 - `.mp4` → `MediaFoundationReader`
 
-**Rationale:** `AudioFileReader` handles WAV and MP3 natively via the ACM decoder. AIFF requires `AiffFileReader` explicitly. The extension-based switch is simple and mirrors the same classification logic in `SongScanner`, creating a consistent contract.
+The reader is constructed with `channel.File.FullName` as its path argument — never with a raw string derived from user input.
+
+**Rationale:** `AudioFileReader` handles WAV and MP3 natively via the ACM decoder. AIFF requires `AiffFileReader` explicitly. Using `FileInfo.Extension` is consistent with the `FileInfo`-typed `AudioChannelManifest.File` property, mirrors the classification logic in `SongScanner`, and means the reader selection and the manifest share one source of truth about what the file is.
 
 ---
 

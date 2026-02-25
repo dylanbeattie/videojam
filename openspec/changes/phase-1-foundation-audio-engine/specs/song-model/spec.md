@@ -2,13 +2,13 @@
 
 ### Requirement: Runtime song manifest records are defined
 The system SHALL define the following immutable record types for in-memory use (not persisted):
-- `SongManifest(string SongName, string FolderPath, IReadOnlyList<AudioChannelManifest> AudioChannels, IReadOnlyList<VideoFileManifest> VideoFiles)`
-- `AudioChannelManifest(string FilePath, string ChannelId, AudioChannelType Type)` where `FilePath` is an absolute path and `ChannelId` is the channel identifier used as a key in the show file
-- `VideoFileManifest(string FilePath, int DisplayIndex, string Suffix)` where `FilePath` is absolute and `Suffix` is the underscore-prefixed filename suffix (e.g. `_lyrics`)
+- `SongManifest(string SongName, DirectoryInfo Folder, IReadOnlyList<AudioChannelManifest> AudioChannels, IReadOnlyList<VideoFileManifest> VideoFiles)`
+- `AudioChannelManifest(FileInfo File, string ChannelId, AudioChannelType Type)` where `File` refers to the media file on disk and `ChannelId` is the channel identifier used as a key in the show file
+- `VideoFileManifest(FileInfo File, int DisplayIndex, string Suffix)` where `File` refers to the video file on disk and `Suffix` is the underscore-prefixed filename suffix (e.g. `_lyrics`)
 - `AudioChannelType` enum with values `Stem` and `VideoAudio`
 
 #### Scenario: Records are value-equal when constructed with identical arguments
-- **WHEN** two `AudioChannelManifest` instances are created with the same `FilePath`, `ChannelId`, and `Type`
+- **WHEN** two `AudioChannelManifest` instances are created with the same `File`, `ChannelId`, and `Type`
 - **THEN** they are considered equal (C# record equality)
 
 #### Scenario: Channel ID format for a stem file
@@ -26,6 +26,8 @@ The system SHALL define the following mutable classes for JSON persistence:
 - `Show` with properties: `int Version`, `List<SongEntry> Songs`, `Dictionary<string, int> GlobalDisplayRouting`, `Dictionary<int, string> FallbackImages`
 - `SongEntry` with properties: `string FolderPath`, `string Name`, `Dictionary<string, int> DisplayRoutingOverrides`, `Dictionary<string, ChannelSettings> Channels`
 - `ChannelSettings` with properties: `float Level`, `bool Muted`
+
+> **Note:** `SongEntry.FolderPath` and the values in `Show.FallbackImages` are intentionally typed as `string`. These are *relative* paths stored in the JSON `.show` file; they are not resolvable in isolation and require the `.show` file's own directory to be combined via `PathResolver` before a `DirectoryInfo` or `FileInfo` can be constructed from them. Path resolution is a Phase 4 concern.
 
 #### Scenario: Show has a version field defaulting to 1
 - **WHEN** a new `Show` instance is constructed with `new Show()`

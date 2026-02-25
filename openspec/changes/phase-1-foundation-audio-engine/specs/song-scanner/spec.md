@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: SongScanner classifies audio stem files by extension
-`SongScanner.Scan(string folderPath)` SHALL classify files with extensions `.wav`, `.mp3`, and `.aiff` (case-insensitive) as `AudioChannelType.Stem`. Each SHALL produce one `AudioChannelManifest` with `Type = Stem`, `FilePath` set to the absolute path, and `ChannelId` set to the filename (no directory component).
+`SongScanner.Scan(DirectoryInfo folder)` SHALL classify files with extensions `.wav`, `.mp3`, and `.aiff` (case-insensitive) as `AudioChannelType.Stem`. Each SHALL produce one `AudioChannelManifest` with `Type = Stem`, `File` set to a `FileInfo` for the discovered file, and `ChannelId` set to the filename (no directory component).
 
 #### Scenario: WAV file produces a Stem channel
 - **WHEN** a folder contains `drums.wav`
@@ -22,7 +22,7 @@
 ---
 
 ### Requirement: SongScanner classifies MP4 files as video + video audio
-`SongScanner.Scan` SHALL classify files with the `.mp4` extension (case-insensitive) as producing both a `VideoFileManifest` entry and an `AudioChannelManifest` with `Type = VideoAudio`. The `ChannelId` for the audio channel SHALL be `"{filename}:audio"`. The `VideoFileManifest.Suffix` SHALL be the underscore-prefixed portion of the filename before the extension (e.g. `opening_visuals_lyrics.mp4` → suffix `_lyrics`). If no underscore is present in the filename, `Suffix` SHALL be an empty string.
+`SongScanner.Scan` SHALL classify files with the `.mp4` extension (case-insensitive) as producing both a `VideoFileManifest` entry and an `AudioChannelManifest` with `Type = VideoAudio`. Both entries SHALL reference the file via a `FileInfo`. The `ChannelId` for the audio channel SHALL be `"{filename}:audio"`. The `VideoFileManifest.Suffix` SHALL be the underscore-prefixed portion of the filename before the extension (e.g. `opening_visuals_lyrics.mp4` → suffix `_lyrics`). If no underscore is present in the filename, `Suffix` SHALL be an empty string.
 
 #### Scenario: MP4 with a suffix produces a VideoFileManifest and a VideoAudio channel
 - **WHEN** a folder contains `show_visuals.mp4`
@@ -39,7 +39,7 @@
 ---
 
 ### Requirement: SongScanner ignores unrecognised file types
-Files with extensions other than `.wav`, `.mp3`, `.aiff`, and `.mp4` SHALL be silently ignored by `SongScanner.Scan`. No error, warning, or exception is raised for unrecognised files.
+Files with extensions other than `.wav`, `.mp3`, `.aiff`, and `.mp4` SHALL be silently ignored by `SongScanner.Scan(DirectoryInfo folder)`. No error, warning, or exception is raised for unrecognised files.
 
 #### Scenario: Non-media files are ignored
 - **WHEN** a folder contains `setlist.txt`, `cover.png`, `notes.pdf`, and `readme.md`
@@ -55,14 +55,14 @@ Files with extensions other than `.wav`, `.mp3`, `.aiff`, and `.mp4` SHALL be si
 `SongScanner.Scan` SHALL return a valid `SongManifest` with empty collections when the target folder contains no files.
 
 #### Scenario: Empty folder produces an empty manifest
-- **WHEN** `Scan` is called on a folder containing no files
+- **WHEN** `Scan` is called on a `DirectoryInfo` pointing to a folder containing no files
 - **THEN** the returned manifest has zero `AudioChannels` and zero `VideoFiles`, and no exception is thrown
 
 ---
 
-### Requirement: SongScanner sets SongName and FolderPath on the manifest
-`SongScanner.Scan` SHALL set `SongManifest.SongName` to the name of the folder (not the full path) and `SongManifest.FolderPath` to the absolute path of the folder.
+### Requirement: SongScanner sets SongName and Folder on the manifest
+`SongScanner.Scan` SHALL set `SongManifest.SongName` to `folder.Name` (the folder name, not the full path) and `SongManifest.Folder` to the `DirectoryInfo` passed in.
 
 #### Scenario: SongName is the folder name only
-- **WHEN** `Scan` is called on `C:\songs\01_OpeningTrack`
-- **THEN** `SongManifest.SongName` is `"01_OpeningTrack"` and `SongManifest.FolderPath` is `"C:\songs\01_OpeningTrack"`
+- **WHEN** `Scan` is called with a `DirectoryInfo` whose `FullName` is `C:\songs\01_OpeningTrack`
+- **THEN** `SongManifest.SongName` is `"01_OpeningTrack"` and `SongManifest.Folder.FullName` is `"C:\songs\01_OpeningTrack"`

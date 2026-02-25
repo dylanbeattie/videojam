@@ -20,20 +20,20 @@
 ## 3. Model Implementation
 
 - [ ] 3.1 Implement `AudioChannelType` enum (`Stem`, `VideoAudio`) in `Model/SongManifest.cs`
-- [ ] 3.2 Implement `AudioChannelManifest` record (`FilePath`, `ChannelId`, `Type`) in `Model/SongManifest.cs`
-- [ ] 3.3 Implement `VideoFileManifest` record (`FilePath`, `DisplayIndex`, `Suffix`) in `Model/SongManifest.cs`
-- [ ] 3.4 Implement `SongManifest` record (`SongName`, `FolderPath`, `AudioChannels`, `VideoFiles`) in `Model/SongManifest.cs`
+- [ ] 3.2 Implement `AudioChannelManifest` record (`File: FileInfo`, `ChannelId`, `Type`) in `Model/SongManifest.cs`
+- [ ] 3.3 Implement `VideoFileManifest` record (`File: FileInfo`, `DisplayIndex`, `Suffix`) in `Model/SongManifest.cs`
+- [ ] 3.4 Implement `SongManifest` record (`SongName`, `Folder: DirectoryInfo`, `AudioChannels`, `VideoFiles`) in `Model/SongManifest.cs`
 - [ ] 3.5 Implement `ChannelSettings` class in `Model/ChannelSettings.cs`: `float Level { get; set; } = 1.0f`, `bool Muted { get; set; } = false`; add XML doc comments
 - [ ] 3.6 Implement `Show` class in `Model/Show.cs`: `int Version = 1`, `List<SongEntry> Songs`, `Dictionary<string, int> GlobalDisplayRouting`, `Dictionary<int, string> FallbackImages`; add XML doc comments
 - [ ] 3.7 Implement `SongEntry` class in `Model/SongEntry.cs`: `string FolderPath`, `string Name`, `Dictionary<string, int> DisplayRoutingOverrides`, `Dictionary<string, ChannelSettings> Channels` (initialised to empty dict in constructor); add XML doc comments
 
 ## 4. SongScanner Implementation
 
-- [ ] 4.1 Implement `SongScanner.Scan(string folderPath)` returning `SongManifest`:
-  - Set `SongName` to `Path.GetFileName(folderPath)` and `FolderPath` to the absolute path
-  - Enumerate files in the folder (non-recursive)
-  - For `.wav` / `.mp3` / `.aiff` (case-insensitive): add an `AudioChannelManifest` with `Type = Stem` and `ChannelId = Path.GetFileName(filePath)`
-  - For `.mp4` (case-insensitive): add both a `VideoFileManifest` (with suffix extracted from the last underscore-prefixed segment before the extension, or empty string if none) and an `AudioChannelManifest` with `Type = VideoAudio` and `ChannelId = "{filename}:audio"`
+- [ ] 4.1 Implement `SongScanner.Scan(DirectoryInfo folder)` returning `SongManifest`:
+  - Set `SongName` to `folder.Name` and `Folder` to the `DirectoryInfo` passed in
+  - Enumerate files via `folder.EnumerateFiles()` (non-recursive), yielding `FileInfo` instances
+  - For `.wav` / `.mp3` / `.aiff` (case-insensitive, via `file.Extension`): add an `AudioChannelManifest` with `Type = Stem`, `File = fileInfo`, and `ChannelId = file.Name`
+  - For `.mp4` (case-insensitive): add both a `VideoFileManifest` with `File = fileInfo` and suffix extracted from the last underscore-prefixed segment before the extension (or empty string if none), and an `AudioChannelManifest` with `Type = VideoAudio`, `File = fileInfo`, and `ChannelId = "{file.Name}:audio"`
   - All other extensions: silently ignored
 - [ ] 4.2 Add XML doc comments to `SongScanner` and its public `Scan` method
 
@@ -45,7 +45,7 @@
 - [ ] 5.4 Test: folder with `performance.mp4` (no suffix) → VideoFileManifest with empty Suffix
 - [ ] 5.5 Test: folder with `notes.txt`, `cover.png`, `readme.pdf` → empty manifest (all ignored)
 - [ ] 5.6 Test: folder with `DRUMS.WAV` and `Bass.Mp3` → both classified as Stem (case-insensitive extension matching)
-- [ ] 5.7 Test: `SongManifest.SongName` equals the folder name (not full path); `FolderPath` equals the absolute folder path
+- [ ] 5.7 Test: `SongManifest.SongName` equals `folder.Name`; `SongManifest.Folder.FullName` equals the `DirectoryInfo.FullName` passed to `Scan`
 
 ## 6. ChannelSettings Unit Tests
 
@@ -56,7 +56,7 @@
 ## 7. AudioEngine Implementation
 
 - [ ] 7.1 Implement `AudioEngine.Load(SongManifest manifest, Dictionary<string, ChannelSettings> channelSettings)`:
-  - For each `AudioChannelManifest`, instantiate the appropriate reader (`AudioFileReader` for .wav/.mp3, `AiffFileReader` for .aiff, `MediaFoundationReader` for .mp4 audio)
+  - For each `AudioChannelManifest`, select the reader by `channel.File.Extension` (case-insensitive): `AudioFileReader` for .wav/.mp3, `AiffFileReader` for .aiff, `MediaFoundationReader` for .mp4; pass `channel.File.FullName` as the path argument to the reader constructor
   - Wrap each reader in a `VolumeSampleProvider` using `channelSettings[channelId].Level` (or `1.0f` if not present)
   - Resample each provider to 44100 Hz / 32-bit float / stereo if the source format differs (use `WdlResamplingSampleProvider` or `MediaFoundationResampler`)
   - Compose all providers into a single `MixingSampleProvider`
@@ -85,7 +85,7 @@
   - A **Stop** button
   - A status `TextBlock` showing current state (`Idle` / `Loaded` / `Playing` / `Stopped`)
 - [ ] 8.2 Wire `MainWindow.xaml.cs` code-behind:
-  - Load: call `SongScanner.Scan()` then `AudioEngine.Load()` with default `ChannelSettings`; update status; enable Play
+  - Load: wrap the folder browser's selected path string in `new DirectoryInfo(selectedPath)`, call `SongScanner.Scan(directoryInfo)` then `AudioEngine.Load()` with default `ChannelSettings`; update status; enable Play
   - Play: call `AudioEngine.Play()`; update status
   - Stop: call `AudioEngine.Stop()`; update status
   - Handle `AudioEngine.PlaybackEnded` to update status to `Stopped` and re-enable Load
