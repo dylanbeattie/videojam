@@ -129,4 +129,38 @@ public sealed class SongScannerTests : IDisposable {
 		Assert.Single(result.AudioChannels);
 		Assert.Equal("drums.wav", result.AudioChannels[0].ChannelId);
 	}
+
+	// ── Display routing ───────────────────────────────────────────────────────
+
+	[Fact]
+	public void Scan_WithRoutingAndMatchingSuffix_ResolvesDisplayIndexFromRouting() {
+		CreateFile("show_lyrics.mp4");
+		var routing = new Dictionary<string, int> { ["_lyrics"] = 2 };
+
+		SongManifest result = SongScanner.Scan(_tempDir, displayRouting: routing);
+
+		Assert.Single(result.VideoFiles);
+		Assert.Equal(2, result.VideoFiles[0].DisplayIndex);
+	}
+
+	[Fact]
+	public void Scan_WithRoutingButSuffixAbsent_FallsBackToPrimaryDisplayIndex() {
+		CreateFile("show_visuals.mp4");
+		var routing = new Dictionary<string, int> { ["_lyrics"] = 2 };
+
+		SongManifest result = SongScanner.Scan(_tempDir, displayRouting: routing);
+
+		Assert.Single(result.VideoFiles);
+		Assert.Equal(VideoJam.Engine.DisplayManager.PrimaryDisplayIndex, result.VideoFiles[0].DisplayIndex);
+	}
+
+	[Fact]
+	public void Scan_WithNoRoutingArgument_FallsBackToPrimaryDisplayIndex() {
+		CreateFile("show_visuals.mp4");
+
+		SongManifest result = SongScanner.Scan(_tempDir);
+
+		Assert.Single(result.VideoFiles);
+		Assert.Equal(VideoJam.Engine.DisplayManager.PrimaryDisplayIndex, result.VideoFiles[0].DisplayIndex);
+	}
 }

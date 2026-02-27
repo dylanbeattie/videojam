@@ -180,6 +180,42 @@ internal sealed class VideoEngine : IDisposable, IVideoPlayback {
 	}
 
 	/// <summary>
+	/// Loads video files for all display slots in <paramref name="windows"/> concurrently,
+	/// awaiting all pre-buffer operations via <see cref="Task.WhenAll"/>.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Each entry in <paramref name="windows"/> is passed as a separate <see cref="Load"/>
+	/// call dispatched in parallel. Partial failure is handled gracefully: if a <see cref="Load"/>
+	/// times out during pre-buffering it returns without registering a slot (per the
+	/// pre-buffer timeout contract) and <see cref="LoadAll"/> still completes normally.
+	/// An unhandled exception from any slot propagates out of <see cref="LoadAll"/>.
+	/// </para>
+	/// <para>
+	/// If <paramref name="windows"/> is empty, the method completes immediately without error.
+	/// </para>
+	/// </remarks>
+	/// <param name="manifest">The song manifest produced by <c>SongScanner</c>.</param>
+	/// <param name="windows">
+	/// Map of display index → <see cref="VlcDisplayWindow"/>. One <see cref="Load"/> call
+	/// is dispatched per entry.
+	/// </param>
+	/// <param name="cancellationToken">Cancellation token propagated to every <see cref="Load"/> call.</param>
+	public Task LoadAll(
+		SongManifest manifest,
+		IReadOnlyDictionary<int, VlcDisplayWindow> windows,
+		CancellationToken cancellationToken = default) {
+
+		ObjectDisposedException.ThrowIf(_disposed, this);
+
+		Task[] tasks = windows
+			.Select(kvp => Load(manifest, kvp.Key, kvp.Value, cancellationToken))
+			.ToArray();
+
+		return Task.WhenAll(tasks);
+	}
+
+	/// <summary>
 	/// Starts playback on all active (pre-buffered) <see cref="MediaPlayer"/> instances.
 	/// </summary>
 	/// <param name="audioStartTimestamp">

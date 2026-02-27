@@ -1,3 +1,4 @@
+using VideoJam.Engine;
 using VideoJam.Model;
 
 namespace VideoJam.Services;
@@ -12,23 +13,24 @@ public static class SongScanner {
 		new(StringComparer.OrdinalIgnoreCase) { ".wav", ".mp3", ".aiff" };
 
 	/// <summary>
-	/// Display index assigned to all video files until routing is resolved by
-	/// <c>DisplayManager</c> in Phase 3.
-	/// </summary>
-	// Phase 3 note: promote to DisplayManager.PrimaryDisplayIndex when that class is implemented.
-	private const int PrimaryDisplayIndex = 0;
-
-	/// <summary>
 	/// Scans <paramref name="folder"/> (non-recursive) and returns a <see cref="SongManifest"/>
 	/// describing all recognised audio and video files.
 	/// </summary>
 	/// <param name="folder">The song directory to scan.</param>
+	/// <param name="displayRouting">
+	/// Optional mapping of filename suffix (e.g. <c>"_lyrics"</c>) to display index.
+	/// Each MP4 file's <see cref="VideoFileManifest.DisplayIndex"/> is resolved by looking up
+	/// its suffix in this dictionary. If the suffix is absent or <paramref name="displayRouting"/>
+	/// is <see langword="null"/>, the file is assigned to <see cref="DisplayManager.PrimaryDisplayIndex"/>.
+	/// </param>
 	/// <returns>
 	/// A manifest whose <see cref="SongManifest.SongName"/> is <c>folder.Name</c>
 	/// and whose <see cref="SongManifest.Folder"/> is the supplied <paramref name="folder"/>.
 	/// Unrecognised files are silently ignored.
 	/// </returns>
-	public static SongManifest Scan(DirectoryInfo folder) {
+	public static SongManifest Scan(
+		DirectoryInfo folder,
+		IReadOnlyDictionary<string, int>? displayRouting = null) {
 		var audioChannels = new List<AudioChannelManifest>();
 		var videoFiles = new List<VideoFileManifest>();
 
@@ -45,7 +47,7 @@ public static class SongScanner {
 
 				videoFiles.Add(new VideoFileManifest(
 					File: file,
-					DisplayIndex: PrimaryDisplayIndex,   // routing resolved later by DisplayManager / Phase 3
+					DisplayIndex: DisplayManager.ResolveDisplayIndex(suffix, displayRouting ?? new Dictionary<string, int>()),
 					Suffix: suffix));
 
 				audioChannels.Add(new AudioChannelManifest(
