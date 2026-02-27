@@ -1,7 +1,6 @@
 using System.Windows;
 using System.Windows.Media.Imaging;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Win32;
 using VideoJam.Engine;
 using VideoJam.Model;
@@ -111,7 +110,8 @@ public partial class MainWindow : Window {
 		PlayButton.IsEnabled      = false;
 
 		try {
-			var loggerFactory = NullLoggerFactory.Instance;
+			using var loggerFactory = LoggerFactory.Create(b =>
+				b.AddConsole().SetMinimumLevel(LogLevel.Debug));
 
 			// ── Build the audio pipeline ──────────────────────────────────────
 			var channelSettings = new Dictionary<string, ChannelSettings>();

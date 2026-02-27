@@ -1,5 +1,4 @@
 <Project>
-
   <!-- ====================================================================
        VideoJam — Central Package Management (CPM).
        All PackageReference entries in child .csproj files omit Version=;
@@ -8,25 +7,22 @@
        Patch updates are acceptable without review.
        Minor/major updates require explicit review and testing before bumping.
        ==================================================================== -->
-
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
-
   <!-- Production dependencies -->
   <ItemGroup>
-    <PackageVersion Include="NAudio"                       Version="2.2.1"   />
-    <PackageVersion Include="LibVLCSharp"                  Version="3.9.6"   />
-    <PackageVersion Include="VideoLAN.LibVLC.Windows"      Version="3.0.23"  />
-    <PackageVersion Include="Microsoft.Extensions.Logging" Version="8.0.1"   />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.3" />
+    <PackageVersion Include="NAudio" Version="2.2.1" />
+    <PackageVersion Include="LibVLCSharp" Version="3.9.6" />
+    <PackageVersion Include="VideoLAN.LibVLC.Windows" Version="3.0.23" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.3" />
   </ItemGroup>
-
   <!-- Test dependencies -->
   <ItemGroup>
-    <PackageVersion Include="xunit"                        Version="2.9.3"   />
-    <PackageVersion Include="xunit.runner.visualstudio"    Version="3.1.4"   />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk"       Version="17.14.1" />
-    <PackageVersion Include="coverlet.collector"           Version="6.0.4"   />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
   </ItemGroup>
-
 </Project>

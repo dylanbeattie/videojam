@@ -29,9 +29,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="NAudio"                       />
-    <PackageReference Include="LibVLCSharp"                  />
-    <PackageReference Include="VideoLAN.LibVLC.Windows"      />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" />
+    <PackageReference Include="NAudio" />
+    <PackageReference Include="LibVLCSharp" />
+    <PackageReference Include="VideoLAN.LibVLC.Windows" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
   </ItemGroup>
 
