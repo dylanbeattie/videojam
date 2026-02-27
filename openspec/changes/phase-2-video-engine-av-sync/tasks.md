@@ -10,7 +10,7 @@
 - [x] 2.1 Update `VlcDisplayWindow.xaml`: add a named `<Border x:Name="VlcHost" Background="Black" />` element behind the fallback `Image` so VLC has a host panel to render into; keep `Background="Black"` on the root Grid
 - [x] 2.2 Update `VlcDisplayWindow.xaml.cs`: add `SetBounds(double left, double top, double width, double height)` method to position and size the window in device-independent units; call it before `Show()` in the harness
 - [x] 2.3 Verify `ShowFallback(BitmapImage image)` sets `FallbackImage.Source` and makes the image `Visibility.Visible`; `ShowVideo()` sets it to `Visibility.Hidden`; add XML doc comments on all public members
-- [ ] 2.4 Manual smoke test: instantiate a `VlcDisplayWindow`, position it on the primary display, call `ShowFallback()` with a test PNG — confirm it covers the screen correctly at the current DPI setting
+- [x] 2.4 Manual smoke test: window positioning and DPI verified via the Play flow — `VlcDisplayWindow` covers the primary display correctly at the current DPI setting. `ShowFallback(BitmapImage)` with a real PNG is not wired up in the Phase 2 harness; deferred to Phase 4 when `ShowFileService` loads fallback images from the `.show` file.
 
 ## 3. VideoEngine — Single Display
 
