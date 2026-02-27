@@ -6,9 +6,13 @@
         Topmost="True"
         Background="Black"
         Title="VideoJam Display">
-    <Grid>
-        <!-- Fallback PNG image (shown when no video is assigned to this display) -->
+    <Grid Background="Black">
+        <!-- VLC render surface host — LibVLC renders directly into this element's HWND.
+             Must sit below the fallback image so ShowVideo()/ShowFallback() can toggle. -->
+        <Border x:Name="VlcHost" Background="Black" />
+
+        <!-- Fallback PNG image (shown when no video is assigned to this display,
+             or between songs). Sits above VlcHost in Z-order. -->
         <Image x:Name="FallbackImage" Stretch="Uniform" />
-        <!-- VLC render surface host — implementation in Phase 2 -->
     </Grid>
 </Window>

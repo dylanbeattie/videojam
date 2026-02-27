@@ -5,8 +5,11 @@ namespace VideoJam.Model;
 /// Serialised to and deserialised from a <c>.show</c> JSON file.
 /// </summary>
 public sealed class Show {
-	/// <summary>Show file schema version. Current value is <c>1</c>.</summary>
-	public int Version { get; set; } = 1;
+	/// <summary>Current <c>.show</c> file schema version.</summary>
+	private const int CurrentSchemaVersion = 1;
+
+	/// <summary>Show file schema version. Current value is <see cref="CurrentSchemaVersion"/>.</summary>
+	public int Version { get; set; } = CurrentSchemaVersion;
 
 	/// <summary>Ordered list of songs in the setlist.</summary>
 	public List<SongEntry> Songs { get; set; } = [];

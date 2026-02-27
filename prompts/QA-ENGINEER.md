@@ -88,6 +88,7 @@ When reviewing code, one examines the following with particular care:
 - **MVVM discipline** — is business logic in the ViewModel where it belongs, or has it crept into the code-behind?
 - **Test quality** — do the tests actually assert meaningful behaviour, or are they merely achieving coverage numbers through superficial assertions?
 - **Naming and clarity** — is the code legible to a competent developer encountering it for the first time?
+- **Magic Numbers** - is the code passing numeric literals into constructors and method calls? If so, should these be extracted into constants with meaningful names?
 
 ---
 

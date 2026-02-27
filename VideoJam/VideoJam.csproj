@@ -6,8 +6,10 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-    <!-- UseWindowsForms added in Phase 3 when DisplayManager is implemented;
-         adding it now causes Application ambiguity with System.Windows.Forms.Application -->
+    <!-- UseWindowsForms intentionally omitted: System.Windows.Forms.Screen is accessible
+         via the net10.0-windows TFM without it, and adding the flag causes an ambiguous
+         Application reference between System.Windows.Forms and System.Windows.
+         Phase 3 DisplayManager will use fully-qualified Screen references the same way. -->
 
     <!-- win-x64 self-contained publish (no single-file: libvlc natives must remain separate) -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -16,6 +18,9 @@
 
     <!-- Suppress platform compatibility warnings — VideoJam is Windows-only by design -->
     <PlatformTarget>x64</PlatformTarget>
+
+    <!-- DPI-aware manifest for correct VlcDisplayWindow placement on HiDPI displays -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <!-- System.IO (FileInfo, DirectoryInfo) is not in the WPF SDK's implicit usings -->

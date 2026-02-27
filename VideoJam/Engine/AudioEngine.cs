@@ -24,11 +24,24 @@ namespace VideoJam.Engine;
 /// stems finish naturally. It is <b>not</b> raised after an explicit <see cref="Stop"/>.
 /// </para>
 /// </remarks>
-internal sealed class AudioEngine : IDisposable {
+internal sealed class AudioEngine : IDisposable, IAudioPlayback {
 	// ── Constants ────────────────────────────────────────────────────────────
 
+	/// <summary>Target mix sample rate in Hz.</summary>
+	private const int MixSampleRate = 44_100;
+
+	/// <summary>Target mix channel count (stereo).</summary>
+	private const int MixChannelCount = 2;
+
+	/// <summary>Channel count for a mono source.</summary>
+	private const int MonoChannelCount = 1;
+
+	/// <summary>Default per-channel volume level (unity gain) when no settings are provided.</summary>
+	private const float DefaultChannelLevel = 1.0f;
+
 	/// <summary>Target mix format: 44 100 Hz, 32-bit float, stereo.</summary>
-	private static readonly WaveFormat MixFormat = WaveFormat.CreateIeeeFloatWaveFormat(44_100, 2);
+	private static readonly WaveFormat MixFormat =
+		WaveFormat.CreateIeeeFloatWaveFormat(MixSampleRate, MixChannelCount);
 
 	/// <summary>WASAPI shared-mode latency in milliseconds.</summary>
 	private const int WasapiLatencyMs = 50;
@@ -83,7 +96,7 @@ internal sealed class AudioEngine : IDisposable {
 			// Apply per-channel volume.
 			float level = channelSettings.TryGetValue(channel.ChannelId, out ChannelSettings? settings)
 				? settings.Level
-				: 1.0f;
+				: DefaultChannelLevel;
 
 			var volumeProvider = new VolumeSampleProvider(resampled) { Volume = level };
 			sampleProviders.Add(volumeProvider);
@@ -187,7 +200,7 @@ internal sealed class AudioEngine : IDisposable {
 			result = new WdlResamplingSampleProvider(result, MixFormat.SampleRate);
 
 		// Step 2 — Upmix mono → stereo if the mix format requires it.
-		if (result.WaveFormat.Channels == 1 && MixFormat.Channels == 2)
+		if (result.WaveFormat.Channels == MonoChannelCount && MixFormat.Channels == MixChannelCount)
 			result = new MonoToStereoSampleProvider(result);
 
 		// Guard: a stereo source cannot be downmixed to a mono mix format here.

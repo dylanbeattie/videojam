@@ -12,6 +12,13 @@ public static class SongScanner {
 		new(StringComparer.OrdinalIgnoreCase) { ".wav", ".mp3", ".aiff" };
 
 	/// <summary>
+	/// Display index assigned to all video files until routing is resolved by
+	/// <c>DisplayManager</c> in Phase 3.
+	/// </summary>
+	// Phase 3 note: promote to DisplayManager.PrimaryDisplayIndex when that class is implemented.
+	private const int PrimaryDisplayIndex = 0;
+
+	/// <summary>
 	/// Scans <paramref name="folder"/> (non-recursive) and returns a <see cref="SongManifest"/>
 	/// describing all recognised audio and video files.
 	/// </summary>
@@ -38,7 +45,7 @@ public static class SongScanner {
 
 				videoFiles.Add(new VideoFileManifest(
 					File: file,
-					DisplayIndex: 0,      // routing resolved later by DisplayManager / Phase 3
+					DisplayIndex: PrimaryDisplayIndex,   // routing resolved later by DisplayManager / Phase 3
 					Suffix: suffix));
 
 				audioChannels.Add(new AudioChannelManifest(

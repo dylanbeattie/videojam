@@ -4,8 +4,8 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="VideoJam — Phase 1 Audio Harness"
-        Height="220" Width="420"
+        Title="VideoJam — Phase 2 A/V Sync Harness"
+        Height="300" Width="480"
         ResizeMode="CanMinimize">
 
     <StackPanel Margin="20" VerticalAlignment="Center">
@@ -25,16 +25,35 @@
                    Foreground="Gray"
                    TextTrimming="CharacterEllipsis"
                    HorizontalAlignment="Center"
+                   Margin="0,0,0,6" />
+
+        <!-- Currently loaded video file -->
+        <TextBlock x:Name="VideoLabel"
+                   Text="No video file selected"
+                   FontSize="11"
+                   Foreground="Gray"
+                   TextTrimming="CharacterEllipsis"
+                   HorizontalAlignment="Center"
                    Margin="0,0,0,20" />
 
-        <!-- Transport controls -->
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+        <!-- Source selection row -->
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,10">
 
             <Button x:Name="LoadButton"
                     Content="Load Folder"
                     Width="110" Height="36"
                     Margin="0,0,8,0"
                     Click="OnLoadClicked" />
+
+            <Button x:Name="LoadVideoButton"
+                    Content="Load Video"
+                    Width="110" Height="36"
+                    Click="OnLoadVideoClicked" />
+
+        </StackPanel>
+
+        <!-- Transport controls -->
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
 
             <Button x:Name="PlayButton"
                     Content="▶  Play"
