@@ -1,3 +1,5 @@
+using VideoJam.Services;
+
 namespace VideoJam.Model;
 
 /// <summary>
@@ -24,4 +26,38 @@ public sealed class SongEntry {
 	/// Per-channel settings keyed by channel ID (e.g. <c>"drums.wav"</c> or <c>"video.mp4:audio"</c>).
 	/// </summary>
 	public Dictionary<string, ChannelSettings> Channels { get; set; } = [];
+
+	/// <summary>
+	/// Creates a <see cref="SongEntry"/> from a runtime scan result, with paths relative
+	/// to the <c>.show</c> file's directory and per-channel defaults applied.
+	/// </summary>
+	/// <param name="manifest">The scan result to convert.</param>
+	/// <param name="showFileDirectory">
+	/// The directory of the <c>.show</c> file; used to compute <see cref="FolderPath"/>.
+	/// </param>
+	/// <returns>
+	/// A new <see cref="SongEntry"/> with:
+	/// <list type="bullet">
+	///   <item><see cref="FolderPath"/> — relative path from <paramref name="showFileDirectory"/> to the song folder</item>
+	///   <item><see cref="Name"/> — the folder's leaf name</item>
+	///   <item><see cref="Channels"/> — one entry per audio channel, with type-appropriate defaults</item>
+	///   <item><see cref="DisplayRoutingOverrides"/> — empty</item>
+	/// </list>
+	/// </returns>
+	public static SongEntry CreateFromScan(SongManifest manifest, string showFileDirectory) {
+		var channels = new Dictionary<string, ChannelSettings>();
+		foreach (AudioChannelManifest channel in manifest.AudioChannels) {
+			channels[channel.ChannelId] = new ChannelSettings {
+				Level = 1.0f,
+				Muted = channel.Type == AudioChannelType.VideoAudio,
+			};
+		}
+
+		return new SongEntry {
+			FolderPath = PathResolver.MakeRelative(manifest.Folder.FullName, showFileDirectory),
+			Name = manifest.Folder.Name,
+			Channels = channels,
+			DisplayRoutingOverrides = [],
+		};
+	}
 }
