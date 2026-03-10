@@ -228,7 +228,7 @@
                                     <DataTemplate>
                                         <Grid Margin="0,2">
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="110" />
+                                                <ColumnDefinition Width="210" />
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="60" />
                                             </Grid.ColumnDefinitions>

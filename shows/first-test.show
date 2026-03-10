@@ -1,0 +1,180 @@
+{
+  "version": 1,
+  "songs": [
+    {
+      "folderPath": "../../Dropbox/Creative/Backing Tracks/Stems/Linkin Park - In The End",
+      "name": "Linkin Park - In The End",
+      "displayRoutingOverrides": {},
+      "channels": {
+        "Backing Vocals.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Bass.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Click.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Distorted Electric Guitar 1.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Distorted Electric Guitar 2.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Drum Kit.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Electronic Percussion.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Lead Electric Guitar 2.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Lead Electric Guitar.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Lead Vocal - Chester Bennington.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Lead Vocal - Mike Shinoda.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Piano.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Strings.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Tambourine.mp3": {
+          "level": 1,
+          "muted": false
+        }
+      }
+    },
+    {
+      "folderPath": "../../Dropbox/Claude Stuff/Count Claudula/Stems",
+      "name": "Stems",
+      "displayRoutingOverrides": {},
+      "channels": {
+        "Bar Count.wav": {
+          "level": 1,
+          "muted": false
+        },
+        "Bass Guitar.wav": {
+          "level": 1,
+          "muted": false
+        },
+        "Click.wav": {
+          "level": 1,
+          "muted": false
+        },
+        "Drum Kit.wav": {
+          "level": 1,
+          "muted": false
+        },
+        "Grand Piano.wav": {
+          "level": 1,
+          "muted": false
+        },
+        "Strings.wav": {
+          "level": 1,
+          "muted": false
+        },
+        "video_audience.mp4:audio": {
+          "level": 1,
+          "muted": true
+        },
+        "video_performers.mp4:audio": {
+          "level": 1,
+          "muted": true
+        },
+        "zzz-not-a-video.mp4:audio": {
+          "level": 1,
+          "muted": true
+        }
+      }
+    },
+    {
+      "folderPath": "../../Dropbox/Creative/Backing Tracks/Stems/Dua Lipa - Levitating",
+      "name": "Dua Lipa - Levitating",
+      "displayRoutingOverrides": {},
+      "channels": {
+        "Backing Vocals.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Bass Synth 1.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Bass Synth 2.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Bass.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Click.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Electric Guitar.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Electronic Drum Kit.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Electronic Percussion.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Lead Vocal.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Mellotron.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Sound Effec.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Strings.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Synth Keys.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Synth Lead.mp3": {
+          "level": 1,
+          "muted": false
+        },
+        "Synth Strings.mp3": {
+          "level": 1,
+          "muted": false
+        }
+      }
+    }
+  ],
+  "globalDisplayRouting": {},
+  "fallbackImages": {}
+}
