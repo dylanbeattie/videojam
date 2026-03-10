@@ -1,7 +1,7 @@
 namespace VideoJam.Model;
 
 /// <summary>Playback state machine states.</summary>
-internal enum PlaybackState {
+public enum PlaybackState {
 	Idle,
 	Cued,
 	Playing,

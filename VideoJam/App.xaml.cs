@@ -3,11 +3,14 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
 using Microsoft.Extensions.Logging;
+using VideoJam.UI;
+using VideoJam.UI.ViewModels;
 
 namespace VideoJam;
 
 /// <summary>
-/// Interaction logic for App.xaml
+/// Application entry point and startup wiring.
+/// Constructs the dependency graph and shows <see cref="MainWindow"/>.
 /// </summary>
 public partial class App : Application {
 	// ── Console attachment (WinExe ↔ terminal) ────────────────────────────────
@@ -30,9 +33,7 @@ public partial class App : Application {
 		base.OnStartup(e);
 
 		// Re-attach stdout/stderr to the parent terminal so the Console logger
-		// sink has somewhere to write. WinExe processes are spawned detached from
-		// the parent console; AttachConsole(-1) reconnects them. If the app was
-		// launched by double-click there is no parent console and this is a no-op.
+		// sink has somewhere to write.
 		if (AttachConsole(ATTACH_PARENT_PROCESS)) {
 			Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
 			Console.SetError(new StreamWriter(Console.OpenStandardError()) { AutoFlush = true });
@@ -51,5 +52,18 @@ public partial class App : Application {
 				"VideoJam {Version} — built {Timestamp:yyyy-MM-dd HH:mm:ss}",
 				version?.ToString(3) ?? "unknown",
 				exeStamp);
+
+		// ── Dependency wiring ─────────────────────────────────────────────────
+		// Construct services → ViewModel → View in dependency order.
+		// No IoC container; the graph is small enough for explicit wiring.
+		var dialogService = new WpfDialogService();
+		var viewModel = new MainViewModel(dialogService);
+
+		var mainWindow = new MainWindow {
+			DataContext = viewModel,
+		};
+
+		MainWindow = mainWindow;
+		mainWindow.Show();
 	}
 }
