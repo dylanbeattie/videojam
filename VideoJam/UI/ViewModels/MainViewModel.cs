@@ -1,0 +1,554 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+using VideoJam.Model;
+using VideoJam.Services;
+
+namespace VideoJam.UI.ViewModels;
+
+/// <summary>
+/// Root ViewModel for <see cref="MainWindow"/>.
+/// Owns all operator-facing UI state and the show file operations.
+/// No engine calls are made in Phase 5 — playback wiring is deferred to Phase 6.
+/// </summary>
+public sealed class MainViewModel : INotifyPropertyChanged {
+	// ── Dependencies ──────────────────────────────────────────────────────────
+
+	private readonly ShowFileService _showFileService = new();
+	private readonly IDialogService _dialogService;
+
+	// ── Backing fields ────────────────────────────────────────────────────────
+
+	private Show? _loadedShow;
+	private SongEntry? _selectedSong;
+	private SongRowViewModel? _selectedSongRow;
+	private PlaybackState _playbackState = PlaybackState.Idle;
+	private bool _hasUnsavedChanges;
+	private string _statusText = StatusReady;
+	private string? _showFilePath;
+
+	// ── Status constants ──────────────────────────────────────────────────────
+
+	private const string StatusReady = "Ready";
+	private const string StatusShowLoaded = "Show loaded — select a song to cue";
+	private const string AppTitle = "VideoJam";
+
+	// ── Construction ──────────────────────────────────────────────────────────
+
+	/// <summary>
+	/// Initialises a new <see cref="MainViewModel"/>.
+	/// </summary>
+	/// <param name="dialogService">Dialog abstraction used for all user-facing prompts.</param>
+	public MainViewModel(IDialogService dialogService) {
+		_dialogService = dialogService;
+
+		SongRows = [];
+		SelectedChannels = [];
+		GlobalRoutingEntries = [];
+		FallbackImageEntries = [];
+
+		AddSongCommand = new RelayCommand(ExecuteAddSong, CanAddSong);
+		RemoveSongCommand = new RelayCommand<SongRowViewModel>(ExecuteRemoveSong, r => r is not null);
+		ReorderSongCommand = new RelayCommand<(int from, int to)>(ExecuteReorderSong);
+
+		NewShowCommand = new RelayCommand(ExecuteNewShow);
+		OpenShowCommand = new RelayCommand(ExecuteOpenShow);
+		SaveShowCommand = new RelayCommand(ExecuteSaveShow, () => _loadedShow is not null);
+		SaveAsShowCommand = new RelayCommand(ExecuteSaveAsShow, () => _loadedShow is not null);
+
+		AddRoutingEntryCommand = new RelayCommand(ExecuteAddRoutingEntry, () => _loadedShow is not null);
+		RemoveRoutingEntryCommand = new RelayCommand<DisplayRoutingEntryViewModel>(ExecuteRemoveRoutingEntry);
+
+		BrowseFallbackImageCommand = new RelayCommand<FallbackImageEntryViewModel>(ExecuteBrowseFallbackImage);
+
+		RefreshFallbackDisplayEntries();
+	}
+
+	// ── Properties ────────────────────────────────────────────────────────────
+
+	/// <summary>
+	/// The ordered setlist, bound to the setlist <c>ListBox</c>.
+	/// Each row wraps a <see cref="SongEntry"/> and exposes a bindable <see cref="SongRowViewModel.DisplayIndex"/>
+	/// that is kept current after every Add / Remove / Reorder so the displayed index is always correct.
+	/// </summary>
+	public ObservableCollection<SongRowViewModel> SongRows { get; }
+
+	/// <summary>Per-channel mixer rows for the currently selected song.</summary>
+	public ObservableCollection<ChannelSettingsViewModel> SelectedChannels { get; }
+
+	/// <summary>Global display routing entries for the routing table UI.</summary>
+	public ObservableCollection<DisplayRoutingEntryViewModel> GlobalRoutingEntries { get; }
+
+	/// <summary>Per-display fallback image assignment entries.</summary>
+	public ObservableCollection<FallbackImageEntryViewModel> FallbackImageEntries { get; }
+
+	/// <summary>The currently loaded show, or <see langword="null"/> when no show is open.</summary>
+	public Show? LoadedShow {
+		get => _loadedShow;
+		private set {
+			if (_loadedShow == value) return;
+			_loadedShow = value;
+			OnPropertyChanged();
+			OnPropertyChanged(nameof(WindowTitle));
+			UpdateStatus();
+		}
+	}
+
+	/// <summary>
+	/// The currently selected setlist row (wraps <see cref="SelectedSong"/>).
+	/// Two-way bound to the setlist <c>ListBox.SelectedItem</c>.
+	/// Setting this property also updates <see cref="SelectedSong"/>.
+	/// </summary>
+	public SongRowViewModel? SelectedSongRow {
+		get => _selectedSongRow;
+		set {
+			if (_selectedSongRow == value) return;
+			_selectedSongRow = value;
+			_selectedSong = value?.Song;
+			OnPropertyChanged();
+			OnPropertyChanged(nameof(SelectedSong));
+			RebuildSelectedChannels();
+			UpdateStatus();
+		}
+	}
+
+	/// <summary>
+	/// The underlying <see cref="SongEntry"/> for the currently selected song, or <see langword="null"/>.
+	/// Setting this property also synchronises <see cref="SelectedSongRow"/> to the matching row.
+	/// </summary>
+	public SongEntry? SelectedSong {
+		get => _selectedSong;
+		set {
+			if (_selectedSong == value) return;
+			_selectedSong = value;
+			_selectedSongRow = value is null ? null : SongRows.FirstOrDefault(r => r.Song == value);
+			OnPropertyChanged();
+			OnPropertyChanged(nameof(SelectedSongRow));
+			RebuildSelectedChannels();
+			UpdateStatus();
+		}
+	}
+
+	/// <summary>Current playback state. Defaults to <see cref="PlaybackState.Idle"/> in Phase 5.</summary>
+	public PlaybackState PlaybackState {
+		get => _playbackState;
+		private set {
+			if (_playbackState == value) return;
+			_playbackState = value;
+			OnPropertyChanged();
+			OnPropertyChanged(nameof(IsMixerEnabled));
+			OnPropertyChanged(nameof(IsSetlistInteractive));
+		}
+	}
+
+	/// <summary>
+	/// <see langword="true"/> when mixer controls (sliders, checkboxes) should be enabled.
+	/// False during <see cref="PlaybackState.Playing"/> or <see cref="PlaybackState.Paused"/>.
+	/// </summary>
+	public bool IsMixerEnabled =>
+		_playbackState is PlaybackState.Idle or PlaybackState.Cued;
+
+	/// <summary>
+	/// <see langword="true"/> when song selection in the setlist is allowed.
+	/// False during <see cref="PlaybackState.Playing"/> or <see cref="PlaybackState.Paused"/>.
+	/// </summary>
+	public bool IsSetlistInteractive =>
+		_playbackState is PlaybackState.Idle or PlaybackState.Cued;
+
+	/// <summary><see langword="true"/> when the show has changes that have not been saved.</summary>
+	public bool HasUnsavedChanges {
+		get => _hasUnsavedChanges;
+		private set {
+			if (_hasUnsavedChanges == value) return;
+			_hasUnsavedChanges = value;
+			OnPropertyChanged();
+			OnPropertyChanged(nameof(WindowTitle));
+		}
+	}
+
+	/// <summary>Human-readable status message shown in the status bar.</summary>
+	public string StatusText {
+		get => _statusText;
+		private set {
+			if (_statusText == value) return;
+			_statusText = value;
+			OnPropertyChanged();
+		}
+	}
+
+	/// <summary>
+	/// WPF window title following the pattern <c>VideoJam — {show name}{*}</c>.
+	/// Bound to <c>MainWindow.Title</c>.
+	/// </summary>
+	public string WindowTitle {
+		get {
+			if (_loadedShow is null) return $"{AppTitle} — (no show)";
+			var name = string.IsNullOrWhiteSpace(_showFilePath)
+				? "(unsaved)"
+				: Path.GetFileNameWithoutExtension(_showFilePath);
+			return $"{AppTitle} — {name}{(_hasUnsavedChanges ? "*" : string.Empty)}";
+		}
+	}
+
+	// ── Commands ──────────────────────────────────────────────────────────────
+
+	/// <summary>Adds a song by picking a folder via <see cref="IDialogService"/>.</summary>
+	public RelayCommand AddSongCommand { get; }
+
+	/// <summary>Removes a <see cref="SongRowViewModel"/> from the setlist. Parameter: the row to remove.</summary>
+	public RelayCommand<SongRowViewModel> RemoveSongCommand { get; }
+
+	/// <summary>
+	/// Reorders a song in the setlist. Parameter: a <c>(int from, int to)</c> tuple.
+	/// Uses <see cref="ObservableCollection{T}.Move"/> to avoid re-creating the collection.
+	/// </summary>
+	public RelayCommand<(int from, int to)> ReorderSongCommand { get; }
+
+	/// <summary>Creates a new blank show (with unsaved-changes guard).</summary>
+	public RelayCommand NewShowCommand { get; }
+
+	/// <summary>Opens an existing <c>.show</c> file (with unsaved-changes guard).</summary>
+	public RelayCommand OpenShowCommand { get; }
+
+	/// <summary>Saves the current show to its existing path (or delegates to Save As).</summary>
+	public RelayCommand SaveShowCommand { get; }
+
+	/// <summary>Saves the current show to a new path chosen by the operator.</summary>
+	public RelayCommand SaveAsShowCommand { get; }
+
+	/// <summary>Appends a blank entry to the global display routing table.</summary>
+	public RelayCommand AddRoutingEntryCommand { get; }
+
+	/// <summary>Removes a display routing entry. Parameter: the entry ViewModel to remove.</summary>
+	public RelayCommand<DisplayRoutingEntryViewModel> RemoveRoutingEntryCommand { get; }
+
+	/// <summary>Opens a PNG file picker for a fallback image entry. Parameter: the entry ViewModel.</summary>
+	public RelayCommand<FallbackImageEntryViewModel> BrowseFallbackImageCommand { get; }
+
+	// ── Public helpers ────────────────────────────────────────────────────────
+
+	/// <summary>
+	/// Called from <c>MainWindow.OnClosing</c>: applies the unsaved-changes guard and returns
+	/// <see langword="true"/> if the window close should be cancelled (user clicked Cancel).
+	/// </summary>
+	public bool ConfirmClose() {
+		if (!_hasUnsavedChanges) return false;
+
+		bool? result = _dialogService.Confirm3(
+			"You have unsaved changes. Save before closing?",
+			"Unsaved Changes");
+
+		if (result is null) return true;   // Cancel → abort the close
+
+		if (result == true) {
+			ExecuteSaveShow();
+			if (_hasUnsavedChanges) return true;  // Save failed or was itself cancelled → abort close
+		}
+		return false;  // No → allow the window to close without saving
+	}
+
+	// ── Command implementations ───────────────────────────────────────────────
+
+	private bool CanAddSong() => _loadedShow is not null;
+
+	private void ExecuteAddSong() {
+		var folderPath = _dialogService.PickFolder("Select a song folder containing audio stems");
+		if (folderPath is null) return;
+
+		SongManifest manifest;
+		try {
+			manifest = SongScanner.Scan(new DirectoryInfo(folderPath));
+		} catch (Exception ex) {
+			_dialogService.ShowError(
+				$"Failed to scan the selected folder:\n\n{ex.Message}",
+				"Scan Error");
+			return;
+		}
+
+		// Build channel settings from the manifest.
+		var channels = manifest.AudioChannels
+			.ToDictionary(
+				ch => ch.ChannelId,
+				ch => new ChannelSettings {
+					Level = 1.0f,
+					Muted = ch.Type == AudioChannelType.VideoAudio,
+				});
+
+		// NOTE (W2): We deliberately do NOT call SongEntry.CreateFromScan() here.
+		// CreateFromScan() calls PathResolver.MakeRelative() at scan time, which requires
+		// a known .show file path. When no show has been saved yet that path is unknown.
+		// Instead we store the absolute folder path and defer relativisation to
+		// ShowFileService.Save(), which calls ToRelativePaths() at write time.
+		// If CreateFromScan() ever gains new channel-default logic this path must be kept in sync.
+		var entry = new SongEntry {
+			FolderPath = folderPath,
+			Name = Path.GetFileName(folderPath),
+			Channels = channels,
+			DisplayRoutingOverrides = [],
+		};
+
+		_loadedShow!.Songs.Add(entry);
+		SongRows.Add(new SongRowViewModel(entry, SongRows.Count + 1));
+		MarkDirty();
+	}
+
+	private void ExecuteRemoveSong(SongRowViewModel? row) {
+		if (row is null) return;
+		if (_selectedSong == row.Song) SelectedSong = null;
+		_loadedShow?.Songs.Remove(row.Song);
+		SongRows.Remove(row);
+		RenumberSongRows();
+		MarkDirty();
+	}
+
+	private void ExecuteReorderSong((int from, int to) args) {
+		var (from, to) = args;
+		if (from == to) return;
+		if (from < 0 || to < 0 || from >= SongRows.Count || to >= SongRows.Count) return;
+
+		SongRows.Move(from, to);
+		RenumberSongRows();
+
+		// Sync reordered ViewModel rows back into the model's Songs list.
+		_loadedShow?.Songs.Clear();
+		if (_loadedShow is not null) {
+			foreach (var row in SongRows)
+				_loadedShow.Songs.Add(row.Song);
+		}
+		MarkDirty();
+	}
+
+	private void ExecuteNewShow() {
+		if (!ApplyUnsavedChangesGuard()) return;
+		ApplyShow(new Show(), showFilePath: null);
+	}
+
+	private void ExecuteOpenShow() {
+		if (!ApplyUnsavedChangesGuard()) return;
+
+		var path = _dialogService.PickOpenFile(
+			"Open Show File",
+			"Show files|*.show|All files|*.*");
+		if (path is null) return;
+
+		Show show;
+		try {
+			show = _showFileService.Load(path);
+		} catch (Exception ex) {
+			_dialogService.ShowError(
+				$"Failed to open the show file:\n\n{ex.Message}",
+				"Open Error");
+			return;
+		}
+
+		// Resolve relative paths to absolute so in-memory Show always has absolute paths.
+		NormalizeLoadedPaths(show, Path.GetDirectoryName(path)!);
+		ApplyShow(show, showFilePath: path);
+	}
+
+	private void ExecuteSaveShow() {
+		if (_loadedShow is null) return;
+		if (_showFilePath is null) {
+			ExecuteSaveAsShow();
+			return;
+		}
+		SaveTo(_showFilePath);
+	}
+
+	private void ExecuteSaveAsShow() {
+		if (_loadedShow is null) return;
+		var path = _dialogService.PickSaveFile(
+			"Save Show File",
+			"Show files|*.show|All files|*.*",
+			"show");
+		if (path is null) return;
+		SaveTo(path);
+	}
+
+	private void SaveTo(string path) {
+		// Sync in-memory routing changes back to the Show model before serialising.
+		SyncRoutingToModel();
+
+		try {
+			_showFileService.Save(_loadedShow!, path);
+		} catch (Exception ex) {
+			_dialogService.ShowError(
+				$"Failed to save the show file:\n\n{ex.Message}",
+				"Save Error");
+			return;
+		}
+
+		_showFilePath = path;
+		HasUnsavedChanges = false;
+		OnPropertyChanged(nameof(WindowTitle));
+	}
+
+	private void ExecuteAddRoutingEntry() {
+		if (_loadedShow is null) return;
+		// S1: Use only the constructor callback for dirty tracking — do NOT also subscribe to
+		// PropertyChanged, as that would fire MarkDirty() twice per property change.
+		var entry = new DisplayRoutingEntryViewModel(string.Empty, 0, MarkDirty);
+		GlobalRoutingEntries.Add(entry);
+		// Actual dictionary update happens in SyncRoutingToModel() at save time.
+		MarkDirty();
+	}
+
+	private void ExecuteRemoveRoutingEntry(DisplayRoutingEntryViewModel? entry) {
+		if (entry is null) return;
+		GlobalRoutingEntries.Remove(entry);
+		_loadedShow?.GlobalDisplayRouting.Remove(entry.Suffix);
+		MarkDirty();
+	}
+
+	private void ExecuteBrowseFallbackImage(FallbackImageEntryViewModel? entry) {
+		if (entry is null) return;
+		var path = _dialogService.PickOpenFile(
+			$"Select fallback image for Display {entry.DisplayIndex}",
+			"PNG images|*.png|All files|*.*");
+		if (path is null) return;
+		// S1: entry.ImagePath setter calls the MarkDirty callback — no need to call it again.
+		entry.ImagePath = path;
+		if (_loadedShow is not null)
+			_loadedShow.FallbackImages[entry.DisplayIndex] = path;
+	}
+
+	// ── Unsaved-changes guard ─────────────────────────────────────────────────
+
+	/// <summary>
+	/// Applies the unsaved-changes guard before a destructive operation (New / Open):
+	/// <list type="bullet">
+	///   <item>No unsaved changes → returns <see langword="true"/> (proceed immediately).</item>
+	///   <item>Yes → saves first; returns <see langword="true"/> on success, <see langword="false"/> if save fails.</item>
+	///   <item>No → discards changes and returns <see langword="true"/> (proceed without saving).</item>
+	///   <item>Cancel → returns <see langword="false"/> (abort — do not perform the operation).</item>
+	/// </list>
+	/// </summary>
+	/// <returns><see langword="true"/> to proceed; <see langword="false"/> to abort.</returns>
+	private bool ApplyUnsavedChangesGuard() {
+		if (!_hasUnsavedChanges) return true;
+
+		bool? result = _dialogService.Confirm3(
+			"You have unsaved changes. Save before continuing?",
+			"Unsaved Changes");
+
+		if (result is null) return false;   // Cancel → abort
+
+		if (result == true) {
+			ExecuteSaveShow();
+			if (_hasUnsavedChanges) return false;  // Save failed or was cancelled → abort
+		}
+		return true;  // No → discard and proceed; Yes+saved → proceed
+	}
+
+	// ── Show application helpers ──────────────────────────────────────────────
+
+	private void ApplyShow(Show show, string? showFilePath) {
+		_showFilePath = showFilePath;
+		LoadedShow = show;
+
+		SongRows.Clear();
+		for (int i = 0; i < show.Songs.Count; i++)
+			SongRows.Add(new SongRowViewModel(show.Songs[i], i + 1));
+
+		SelectedSong = null;
+
+		GlobalRoutingEntries.Clear();
+		foreach (var kvp in show.GlobalDisplayRouting) {
+			// S1: Use only the constructor callback for dirty tracking — no PropertyChanged subscription.
+			GlobalRoutingEntries.Add(new DisplayRoutingEntryViewModel(kvp.Key, kvp.Value, MarkDirty));
+		}
+
+		RefreshFallbackDisplayEntries();
+
+		HasUnsavedChanges = false;
+		OnPropertyChanged(nameof(WindowTitle));
+	}
+
+	/// <summary>
+	/// After loading a show from disk, converts relative <see cref="SongEntry.FolderPath"/>
+	/// and <see cref="Show.FallbackImages"/> values to absolute paths so the in-memory model
+	/// is always absolute and <see cref="ShowFileService"/> can safely re-relativize on save.
+	/// </summary>
+	private static void NormalizeLoadedPaths(Show show, string showDirectory) {
+		foreach (var song in show.Songs) {
+			if (!string.IsNullOrEmpty(song.FolderPath) && !Path.IsPathRooted(song.FolderPath))
+				song.FolderPath = PathResolver.Resolve(song.FolderPath, showDirectory);
+		}
+
+		foreach (var key in show.FallbackImages.Keys.ToList()) {
+			var val = show.FallbackImages[key];
+			if (!string.IsNullOrEmpty(val) && !Path.IsPathRooted(val))
+				show.FallbackImages[key] = PathResolver.Resolve(val, showDirectory);
+		}
+	}
+
+	/// <summary>Rebuilds <see cref="SelectedChannels"/> from the newly selected song's channels.</summary>
+	private void RebuildSelectedChannels() {
+		SelectedChannels.Clear();
+		if (_selectedSong is null) return;
+
+		foreach (var kvp in _selectedSong.Channels) {
+			SelectedChannels.Add(new ChannelSettingsViewModel(kvp.Key, kvp.Value, MarkDirty));
+		}
+	}
+
+	/// <summary>
+	/// Enumerates connected displays and rebuilds <see cref="FallbackImageEntries"/>.
+	/// Existing image assignments from <see cref="LoadedShow"/> are preserved.
+	/// </summary>
+	private void RefreshFallbackDisplayEntries() {
+		FallbackImageEntries.Clear();
+		var screens = System.Windows.Forms.Screen.AllScreens;
+		for (int i = 0; i < screens.Length; i++) {
+			var existingPath = _loadedShow?.FallbackImages.TryGetValue(i, out var p) == true ? p : null;
+			FallbackImageEntries.Add(new FallbackImageEntryViewModel(
+				i,
+				screens[i].DeviceName,
+				existingPath,
+				MarkDirty));
+		}
+	}
+
+	/// <summary>
+	/// Syncs the <see cref="GlobalRoutingEntries"/> observable collection back into
+	/// <see cref="Show.GlobalDisplayRouting"/> before serialisation.
+	/// </summary>
+	private void SyncRoutingToModel() {
+		if (_loadedShow is null) return;
+		_loadedShow.GlobalDisplayRouting.Clear();
+		foreach (var entry in GlobalRoutingEntries) {
+			if (!string.IsNullOrWhiteSpace(entry.Suffix))
+				_loadedShow.GlobalDisplayRouting[entry.Suffix] = entry.DisplayIndex;
+		}
+	}
+
+	/// <summary>
+	/// Updates the <see cref="SongRowViewModel.DisplayIndex"/> of every row to match its current
+	/// position in <see cref="SongRows"/>. Called after every Add, Remove, or Reorder mutation
+	/// so the bound <c>TextBlock</c> in each setlist row always displays the correct 1-based number.
+	/// </summary>
+	private void RenumberSongRows() {
+		for (int i = 0; i < SongRows.Count; i++)
+			SongRows[i].DisplayIndex = i + 1;
+	}
+
+	/// <summary>Sets <see cref="HasUnsavedChanges"/> to <see langword="true"/>.</summary>
+	private void MarkDirty() => HasUnsavedChanges = true;
+
+	private void UpdateStatus() {
+		StatusText = (_loadedShow, _selectedSong) switch {
+			(null, _) => StatusReady,
+			(_, null) => StatusShowLoaded,
+			var (_, song) => $"Cued: {song!.Name}",
+		};
+	}
+
+
+	// ── INotifyPropertyChanged ────────────────────────────────────────────────
+
+	/// <inheritdoc />
+	public event PropertyChangedEventHandler? PropertyChanged;
+
+	private void OnPropertyChanged([CallerMemberName] string? name = null) =>
+		PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}

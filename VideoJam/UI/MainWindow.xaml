@@ -3,72 +3,356 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:VideoJam.UI.ViewModels"
+        xmlns:ui="clr-namespace:VideoJam.UI"
+        xmlns:behaviours="clr-namespace:VideoJam.UI.Behaviours"
         mc:Ignorable="d"
-        Title="VideoJam — Phase 2 A/V Sync Harness"
-        Height="300" Width="480"
-        ResizeMode="CanMinimize">
+        Title="{Binding WindowTitle}"
+        Height="640" Width="900"
+        MinHeight="480" MinWidth="700"
+        Closing="OnWindowClosing">
 
-    <StackPanel Margin="20" VerticalAlignment="Center">
+    <Window.Resources>
+        <ui:BoolToFontStyleConverter x:Key="BoolToFontStyle" />
+        <ui:VideoAudioForegroundConverter x:Key="VideoAudioForeground" />
+    </Window.Resources>
 
-        <!-- Status -->
-        <TextBlock x:Name="StatusLabel"
-                   Text="Status: Idle"
-                   FontSize="16"
-                   FontWeight="Bold"
-                   HorizontalAlignment="Center"
-                   Margin="0,0,0,16" />
+    <DockPanel>
 
-        <!-- Currently loaded folder -->
-        <TextBlock x:Name="FolderLabel"
-                   Text="No folder loaded"
-                   FontSize="11"
-                   Foreground="Gray"
-                   TextTrimming="CharacterEllipsis"
-                   HorizontalAlignment="Center"
-                   Margin="0,0,0,6" />
+        <!-- ═══════════════════════════════════════════════════════════════════
+             Menu bar
+             ═══════════════════════════════════════════════════════════════════ -->
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="_File">
+                <MenuItem Header="_New Show"
+                          Command="{Binding NewShowCommand}" />
+                <MenuItem Header="_Open Show…"
+                          Command="{Binding OpenShowCommand}" />
+                <Separator />
+                <MenuItem Header="_Save"
+                          Command="{Binding SaveShowCommand}"
+                          InputGestureText="Ctrl+S" />
+                <MenuItem Header="Save _As…"
+                          Command="{Binding SaveAsShowCommand}" />
+            </MenuItem>
+        </Menu>
 
-        <!-- Currently loaded video file -->
-        <TextBlock x:Name="VideoLabel"
-                   Text="No video file selected"
-                   FontSize="11"
-                   Foreground="Gray"
-                   TextTrimming="CharacterEllipsis"
-                   HorizontalAlignment="Center"
-                   Margin="0,0,0,20" />
+        <!-- ═══════════════════════════════════════════════════════════════════
+             Status bar
+             ═══════════════════════════════════════════════════════════════════ -->
+        <StatusBar DockPanel.Dock="Bottom">
+            <StatusBarItem>
+                <TextBlock Text="{Binding StatusText}" />
+            </StatusBarItem>
+        </StatusBar>
 
-        <!-- Source selection row -->
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,10">
+        <!-- ═══════════════════════════════════════════════════════════════════
+             Main two-panel area
+             ═══════════════════════════════════════════════════════════════════ -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="260" MinWidth="180" />
+                <ColumnDefinition Width="5" />
+                <ColumnDefinition Width="*" MinWidth="300" />
+            </Grid.ColumnDefinitions>
 
-            <Button x:Name="LoadButton"
-                    Content="Load Folder"
-                    Width="110" Height="36"
-                    Margin="0,0,8,0"
-                    Click="OnLoadClicked" />
+            <!-- ── Left panel: Setlist ──────────────────────────────────────── -->
+            <DockPanel Grid.Column="0" Margin="6">
 
-            <Button x:Name="LoadVideoButton"
-                    Content="Load Video"
-                    Width="110" Height="36"
-                    Click="OnLoadVideoClicked" />
+                <TextBlock DockPanel.Dock="Top"
+                           Text="SETLIST"
+                           FontWeight="Bold"
+                           Foreground="Gray"
+                           FontSize="11"
+                           Margin="0,0,0,4" />
 
-        </StackPanel>
+                <!-- Add Song button -->
+                <Button DockPanel.Dock="Bottom"
+                        Content="+ Add Song"
+                        Command="{Binding AddSongCommand}"
+                        Margin="0,4,0,0"
+                        Height="28" />
 
-        <!-- Transport controls -->
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                <!-- Song list -->
+                <ListBox x:Name="SetlistBox"
+                         ItemsSource="{Binding SongRows}"
+                         SelectedItem="{Binding SelectedSongRow, Mode=TwoWay}"
+                         behaviours:DragDropBehaviour.IsEnabled="{Binding IsSetlistInteractive}"
+                         SelectionChanged="OnSetlistSelectionChanged"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         VirtualizingPanel.IsVirtualizing="False">
 
-            <Button x:Name="PlayButton"
-                    Content="▶  Play"
-                    Width="90" Height="36"
-                    Margin="0,0,8,0"
-                    IsEnabled="False"
-                    Click="OnPlayClicked" />
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="Padding" Value="4,3" />
+                        </Style>
+                    </ListBox.ItemContainerStyle>
 
-            <Button x:Name="StopButton"
-                    Content="■  Stop"
-                    Width="90" Height="36"
-                    IsEnabled="False"
-                    Click="OnStopClicked" />
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="30" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
 
-        </StackPanel>
+                                <!-- 1-based index from SongRowViewModel.DisplayIndex.
+                                     Updated in-place by RenumberSongRows() after every mutation,
+                                     so the binding fires correctly even after ObservableCollection.Move(). -->
+                                <TextBlock Grid.Column="0"
+                                           Text="{Binding DisplayIndex, StringFormat={}{0:D2}}"
+                                           Foreground="Gray"
+                                           FontSize="11"
+                                           VerticalAlignment="Center" />
 
-    </StackPanel>
+                                <!-- Song name -->
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding Name}"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" />
+
+                                <!-- Remove button -->
+                                <Button Grid.Column="2"
+                                        Content="✕"
+                                        FontSize="10"
+                                        Width="20" Height="20"
+                                        Margin="4,0,0,0"
+                                        Padding="0"
+                                        VerticalAlignment="Center"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Foreground="Gray"
+                                        ToolTip="Remove song"
+                                        Command="{Binding DataContext.RemoveSongCommand,
+                                                          RelativeSource={RelativeSource AncestorType=Window}}"
+                                        CommandParameter="{Binding}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+
+                </ListBox>
+            </DockPanel>
+
+            <!-- ── Grid splitter ───────────────────────────────────────────── -->
+            <GridSplitter Grid.Column="1"
+                          Width="5"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch"
+                          Background="Transparent"
+                          ResizeDirection="Columns" />
+
+            <!-- ── Right panel: Mixer + Routing ────────────────────────────── -->
+            <DockPanel Grid.Column="2" Margin="6">
+
+                <TextBlock DockPanel.Dock="Top"
+                           Text="MIXER"
+                           FontWeight="Bold"
+                           Foreground="Gray"
+                           FontSize="11"
+                           Margin="0,0,0,4" />
+
+                <!-- Display routing expander (docked to bottom) -->
+                <Expander DockPanel.Dock="Bottom"
+                          Header="Display Routing &amp; Fallback Images"
+                          Margin="0,6,0,0"
+                          IsExpanded="False">
+                    <ScrollViewer MaxHeight="250" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="4">
+
+                            <!-- Global routing table -->
+                            <TextBlock Text="Global Display Routing"
+                                       FontWeight="SemiBold"
+                                       Margin="0,0,0,4" />
+
+                            <ItemsControl ItemsSource="{Binding GlobalRoutingEntries}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="10" />
+                                                <ColumnDefinition Width="60" />
+                                                <ColumnDefinition Width="24" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox Grid.Column="0"
+                                                     Text="{Binding Suffix, UpdateSourceTrigger=PropertyChanged}"
+                                                     ToolTip="Filename suffix (e.g. _lyrics)" />
+                                            <TextBlock Grid.Column="1"
+                                                       Text="→"
+                                                       VerticalAlignment="Center"
+                                                       HorizontalAlignment="Center" />
+                                            <TextBox Grid.Column="2"
+                                                     ToolTip="Display index (0 = primary)">
+                                                <TextBox.Text>
+                                                    <Binding Path="DisplayIndex"
+                                                             UpdateSourceTrigger="PropertyChanged">
+                                                        <Binding.ValidationRules>
+                                                            <ExceptionValidationRule />
+                                                        </Binding.ValidationRules>
+                                                    </Binding>
+                                                </TextBox.Text>
+                                            </TextBox>
+                                            <Button Grid.Column="3"
+                                                    Content="✕"
+                                                    FontSize="10"
+                                                    Width="20" Height="20"
+                                                    Margin="4,0,0,0"
+                                                    Padding="0"
+                                                    Background="Transparent"
+                                                    BorderThickness="0"
+                                                    Foreground="Gray"
+                                                    ToolTip="Remove routing entry"
+                                                    Command="{Binding DataContext.RemoveRoutingEntryCommand,
+                                                                      RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <Button Content="+ Add Mapping"
+                                    Command="{Binding AddRoutingEntryCommand}"
+                                    HorizontalAlignment="Left"
+                                    Margin="0,4,0,8"
+                                    Height="24" />
+
+                            <!-- Fallback images -->
+                            <TextBlock Text="Fallback Images"
+                                       FontWeight="SemiBold"
+                                       Margin="0,4,0,4" />
+
+                            <ItemsControl ItemsSource="{Binding FallbackImageEntries}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="210" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="60" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0"
+                                                       Text="{Binding Label}"
+                                                       VerticalAlignment="Center"
+                                                       FontSize="11" />
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding ImagePath}"
+                                                       VerticalAlignment="Center"
+                                                       FontSize="11"
+                                                       Foreground="Gray"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Margin="4,0" />
+                                            <Button Grid.Column="2"
+                                                    Content="Browse…"
+                                                    Height="22"
+                                                    FontSize="11"
+                                                    Command="{Binding DataContext.BrowseFallbackImageCommand,
+                                                                      RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                        </StackPanel>
+                    </ScrollViewer>
+                </Expander>
+
+                <!-- Mixer panel — channel rows -->
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+
+                        <!-- Placeholder when no song selected -->
+                        <TextBlock Text="Select a song to view channels"
+                                   Foreground="Gray"
+                                   FontStyle="Italic"
+                                   Margin="8"
+                                   HorizontalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SelectedSong}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+
+                        <!-- Locked-during-playback label -->
+                        <TextBlock Text="(locked during playback)"
+                                   Foreground="DarkOrange"
+                                   FontStyle="Italic"
+                                   FontSize="11"
+                                   HorizontalAlignment="Right"
+                                   Margin="0,0,4,4">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsMixerEnabled}" Value="False">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+
+                        <!-- Channel rows — enabled/disabled based on playback state -->
+                        <ItemsControl ItemsSource="{Binding SelectedChannels}"
+                                      IsEnabled="{Binding IsMixerEnabled}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="#20000000"
+                                            BorderThickness="0,0,0,1"
+                                            Padding="4,6">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="160" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="60" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <!-- Channel name — italic + tinted for video audio -->
+                                            <TextBlock Grid.Column="0"
+                                                       Text="{Binding DisplayName}"
+                                                       FontStyle="{Binding IsVideoAudio,
+                                                                           Converter={StaticResource BoolToFontStyle}}"
+                                                       Foreground="{Binding IsVideoAudio,
+                                                                            Converter={StaticResource VideoAudioForeground}}"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding ChannelId}" />
+
+                                            <!-- Level slider -->
+                                            <Slider Grid.Column="1"
+                                                    Minimum="0"
+                                                    Maximum="1"
+                                                    Value="{Binding Level, Mode=TwoWay}"
+                                                    VerticalAlignment="Center"
+                                                    Margin="8,0"
+                                                    ToolTip="{Binding Level, StringFormat={}{0:P0}}" />
+
+                                            <!-- Mute checkbox -->
+                                            <CheckBox Grid.Column="2"
+                                                      IsChecked="{Binding Muted, Mode=TwoWay}"
+                                                      Content="Mute"
+                                                      VerticalAlignment="Center"
+                                                      HorizontalAlignment="Center" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                    </StackPanel>
+                </ScrollViewer>
+
+            </DockPanel>
+
+        </Grid>
+    </DockPanel>
+
 </Window>
