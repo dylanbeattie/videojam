@@ -21,6 +21,7 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 
 	private Show? _loadedShow;
 	private SongEntry? _selectedSong;
+	private SongRowViewModel? _selectedSongRow;
 	private PlaybackState _playbackState = PlaybackState.Idle;
 	private bool _hasUnsavedChanges;
 	private string _statusText = StatusReady;
@@ -41,13 +42,13 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 	public MainViewModel(IDialogService dialogService) {
 		_dialogService = dialogService;
 
-		Songs = [];
+		SongRows = [];
 		SelectedChannels = [];
 		GlobalRoutingEntries = [];
 		FallbackImageEntries = [];
 
 		AddSongCommand = new RelayCommand(ExecuteAddSong, CanAddSong);
-		RemoveSongCommand = new RelayCommand<SongEntry>(ExecuteRemoveSong, s => s is not null);
+		RemoveSongCommand = new RelayCommand<SongRowViewModel>(ExecuteRemoveSong, r => r is not null);
 		ReorderSongCommand = new RelayCommand<(int from, int to)>(ExecuteReorderSong);
 
 		NewShowCommand = new RelayCommand(ExecuteNewShow);
@@ -65,8 +66,12 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 
 	// ── Properties ────────────────────────────────────────────────────────────
 
-	/// <summary>The ordered setlist, bound to the setlist <c>ListBox</c>.</summary>
-	public ObservableCollection<SongEntry> Songs { get; }
+	/// <summary>
+	/// The ordered setlist, bound to the setlist <c>ListBox</c>.
+	/// Each row wraps a <see cref="SongEntry"/> and exposes a bindable <see cref="SongRowViewModel.DisplayIndex"/>
+	/// that is kept current after every Add / Remove / Reorder so the displayed index is always correct.
+	/// </summary>
+	public ObservableCollection<SongRowViewModel> SongRows { get; }
 
 	/// <summary>Per-channel mixer rows for the currently selected song.</summary>
 	public ObservableCollection<ChannelSettingsViewModel> SelectedChannels { get; }
@@ -90,15 +95,35 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 	}
 
 	/// <summary>
-	/// The currently selected / cued song.
+	/// The currently selected setlist row (wraps <see cref="SelectedSong"/>).
 	/// Two-way bound to the setlist <c>ListBox.SelectedItem</c>.
+	/// Setting this property also updates <see cref="SelectedSong"/>.
+	/// </summary>
+	public SongRowViewModel? SelectedSongRow {
+		get => _selectedSongRow;
+		set {
+			if (_selectedSongRow == value) return;
+			_selectedSongRow = value;
+			_selectedSong = value?.Song;
+			OnPropertyChanged();
+			OnPropertyChanged(nameof(SelectedSong));
+			RebuildSelectedChannels();
+			UpdateStatus();
+		}
+	}
+
+	/// <summary>
+	/// The underlying <see cref="SongEntry"/> for the currently selected song, or <see langword="null"/>.
+	/// Setting this property also synchronises <see cref="SelectedSongRow"/> to the matching row.
 	/// </summary>
 	public SongEntry? SelectedSong {
 		get => _selectedSong;
 		set {
 			if (_selectedSong == value) return;
 			_selectedSong = value;
+			_selectedSongRow = value is null ? null : SongRows.FirstOrDefault(r => r.Song == value);
 			OnPropertyChanged();
+			OnPropertyChanged(nameof(SelectedSongRow));
 			RebuildSelectedChannels();
 			UpdateStatus();
 		}
@@ -170,8 +195,8 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 	/// <summary>Adds a song by picking a folder via <see cref="IDialogService"/>.</summary>
 	public RelayCommand AddSongCommand { get; }
 
-	/// <summary>Removes a <see cref="SongEntry"/> from the setlist. Parameter: the entry to remove.</summary>
-	public RelayCommand<SongEntry> RemoveSongCommand { get; }
+	/// <summary>Removes a <see cref="SongRowViewModel"/> from the setlist. Parameter: the row to remove.</summary>
+	public RelayCommand<SongRowViewModel> RemoveSongCommand { get; }
 
 	/// <summary>
 	/// Reorders a song in the setlist. Parameter: a <c>(int from, int to)</c> tuple.
@@ -263,28 +288,32 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 		};
 
 		_loadedShow!.Songs.Add(entry);
-		Songs.Add(entry);
+		SongRows.Add(new SongRowViewModel(entry, SongRows.Count + 1));
 		MarkDirty();
 	}
 
-	private void ExecuteRemoveSong(SongEntry? song) {
-		if (song is null) return;
-		if (SelectedSong == song) SelectedSong = null;
-		_loadedShow?.Songs.Remove(song);
-		Songs.Remove(song);
+	private void ExecuteRemoveSong(SongRowViewModel? row) {
+		if (row is null) return;
+		if (_selectedSong == row.Song) SelectedSong = null;
+		_loadedShow?.Songs.Remove(row.Song);
+		SongRows.Remove(row);
+		RenumberSongRows();
 		MarkDirty();
 	}
 
 	private void ExecuteReorderSong((int from, int to) args) {
 		var (from, to) = args;
 		if (from == to) return;
-		if (from < 0 || to < 0 || from >= Songs.Count || to >= Songs.Count) return;
+		if (from < 0 || to < 0 || from >= SongRows.Count || to >= SongRows.Count) return;
 
-		Songs.Move(from, to);
+		SongRows.Move(from, to);
+		RenumberSongRows();
+
+		// Sync reordered ViewModel rows back into the model's Songs list.
 		_loadedShow?.Songs.Clear();
 		if (_loadedShow is not null) {
-			foreach (var s in Songs)
-				_loadedShow.Songs.Add(s);
+			foreach (var row in SongRows)
+				_loadedShow.Songs.Add(row.Song);
 		}
 		MarkDirty();
 	}
@@ -417,9 +446,9 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 		_showFilePath = showFilePath;
 		LoadedShow = show;
 
-		Songs.Clear();
-		foreach (var s in show.Songs)
-			Songs.Add(s);
+		SongRows.Clear();
+		for (int i = 0; i < show.Songs.Count; i++)
+			SongRows.Add(new SongRowViewModel(show.Songs[i], i + 1));
 
 		SelectedSong = null;
 
@@ -491,6 +520,16 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 			if (!string.IsNullOrWhiteSpace(entry.Suffix))
 				_loadedShow.GlobalDisplayRouting[entry.Suffix] = entry.DisplayIndex;
 		}
+	}
+
+	/// <summary>
+	/// Updates the <see cref="SongRowViewModel.DisplayIndex"/> of every row to match its current
+	/// position in <see cref="SongRows"/>. Called after every Add, Remove, or Reorder mutation
+	/// so the bound <c>TextBlock</c> in each setlist row always displays the correct 1-based number.
+	/// </summary>
+	private void RenumberSongRows() {
+		for (int i = 0; i < SongRows.Count; i++)
+			SongRows[i].DisplayIndex = i + 1;
 	}
 
 	/// <summary>Sets <see cref="HasUnsavedChanges"/> to <see langword="true"/>.</summary>

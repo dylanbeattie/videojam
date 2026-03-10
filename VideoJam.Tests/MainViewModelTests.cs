@@ -37,9 +37,9 @@ public sealed class MainViewModelTests : IDisposable {
 	[Fact]
 	public void RemoveSong_MarksShowDirty() {
 		LoadBlankShow();
-		var entry = AddSongManually("TestSong");
+		var row = AddSongManually("TestSong");
 
-		_vm.RemoveSongCommand.Execute(entry);
+		_vm.RemoveSongCommand.Execute(row);
 
 		Assert.True(_vm.HasUnsavedChanges);
 	}
@@ -67,7 +67,7 @@ public sealed class MainViewModelTests : IDisposable {
 		var songDir = CreateSongDir("Song1", ["drums.wav"]);
 		_dialog.FolderToReturn = songDir;
 		_vm.AddSongCommand.Execute(null);
-		_vm.SelectedSong = _vm.Songs.First();
+		_vm.SelectedSong = _vm.SongRows.First().Song;
 
 		// Simulate level slider change via ChannelSettingsViewModel
 		var channelVm = _vm.SelectedChannels.FirstOrDefault();
@@ -88,7 +88,7 @@ public sealed class MainViewModelTests : IDisposable {
 		var songDir = CreateSongDir("Song1", ["keys.wav"]);
 		_dialog.FolderToReturn = songDir;
 		_vm.AddSongCommand.Execute(null);
-		_vm.SelectedSong = _vm.Songs.First();
+		_vm.SelectedSong = _vm.SongRows.First().Song;
 
 		var channelVm = _vm.SelectedChannels.FirstOrDefault();
 		Assert.NotNull(channelVm);
@@ -118,8 +118,8 @@ public sealed class MainViewModelTests : IDisposable {
 	[Fact]
 	public void StatusText_IsCuedWithName_WhenSongSelected() {
 		LoadBlankShow();
-		var entry = AddSongManually("Opener");
-		_vm.SelectedSong = entry;
+		var row = AddSongManually("Opener");
+		_vm.SelectedSong = row.Song;
 
 		Assert.Equal("Cued: Opener", _vm.StatusText);
 	}
@@ -183,9 +183,9 @@ public sealed class MainViewModelTests : IDisposable {
 
 		_vm.ReorderSongCommand.Execute((0, 2));
 
-		Assert.Equal("B", _vm.Songs[0].Name);
-		Assert.Equal("C", _vm.Songs[1].Name);
-		Assert.Equal("A", _vm.Songs[2].Name);
+		Assert.Equal("B", _vm.SongRows[0].Name);
+		Assert.Equal("C", _vm.SongRows[1].Name);
+		Assert.Equal("A", _vm.SongRows[2].Name);
 	}
 
 	[Fact]
@@ -196,8 +196,8 @@ public sealed class MainViewModelTests : IDisposable {
 
 		_vm.ReorderSongCommand.Execute((0, 0));
 
-		Assert.Equal("X", _vm.Songs[0].Name);
-		Assert.Equal("Y", _vm.Songs[1].Name);
+		Assert.Equal("X", _vm.SongRows[0].Name);
+		Assert.Equal("Y", _vm.SongRows[1].Name);
 	}
 
 	[Fact]
@@ -208,8 +208,22 @@ public sealed class MainViewModelTests : IDisposable {
 
 		_vm.ReorderSongCommand.Execute((0, 1));
 
-		Assert.Equal("Second", _vm.Songs[0].Name);
-		Assert.Equal("First", _vm.Songs[1].Name);
+		Assert.Equal("Second", _vm.SongRows[0].Name);
+		Assert.Equal("First", _vm.SongRows[1].Name);
+	}
+
+	[Fact]
+	public void ReorderSong_UpdatesDisplayIndices() {
+		LoadBlankShow();
+		AddSongManually("A");
+		AddSongManually("B");
+		AddSongManually("C");
+
+		_vm.ReorderSongCommand.Execute((0, 2)); // move A from position 0 to position 2
+
+		Assert.Equal(1, _vm.SongRows[0].DisplayIndex); // B is now #1
+		Assert.Equal(2, _vm.SongRows[1].DisplayIndex); // C is now #2
+		Assert.Equal(3, _vm.SongRows[2].DisplayIndex); // A is now #3
 	}
 
 	// ── NewShow command ───────────────────────────────────────────────────────
@@ -222,7 +236,7 @@ public sealed class MainViewModelTests : IDisposable {
 		_dialog.Confirm3Result = false; // decline save
 		_vm.NewShowCommand.Execute(null);
 
-		Assert.Empty(_vm.Songs);
+		Assert.Empty(_vm.SongRows);
 		Assert.False(_vm.HasUnsavedChanges);
 	}
 
@@ -265,8 +279,8 @@ public sealed class MainViewModelTests : IDisposable {
 		_dialog.Confirm3Result = false;
 		vm2.OpenShowCommand.Execute(null);
 
-		Assert.Single(vm2.Songs);
-		Assert.Equal("LoadMe", vm2.Songs[0].Name);
+		Assert.Single(vm2.SongRows);
+		Assert.Equal("LoadMe", vm2.SongRows[0].Name);
 		Assert.False(vm2.HasUnsavedChanges);
 	}
 
@@ -278,7 +292,7 @@ public sealed class MainViewModelTests : IDisposable {
 
 		_vm.OpenShowCommand.Execute(null);
 
-		Assert.Single(_vm.Songs);
+		Assert.Single(_vm.SongRows);
 	}
 
 	// ── Save command ──────────────────────────────────────────────────────────
@@ -358,20 +372,20 @@ public sealed class MainViewModelTests : IDisposable {
 		_vm.NewShowCommand.Execute(null);
 
 		// Proceeded — songs cleared
-		Assert.Empty(_vm.Songs);
+		Assert.Empty(_vm.SongRows);
 	}
 
 	[Fact]
 	public void UnsavedChangesGuard_WhenCancelled_AbortsOperation() {
 		LoadBlankShow();
 		AddSongViaCommand("Dirty");
-		var songCountBefore = _vm.Songs.Count;
+		var songCountBefore = _vm.SongRows.Count;
 		_dialog.Confirm3Result = null; // user clicks Cancel
 
 		_vm.NewShowCommand.Execute(null);
 
 		// Aborted — show unchanged
-		Assert.Equal(songCountBefore, _vm.Songs.Count);
+		Assert.Equal(songCountBefore, _vm.SongRows.Count);
 		Assert.True(_vm.HasUnsavedChanges);
 	}
 
@@ -380,10 +394,10 @@ public sealed class MainViewModelTests : IDisposable {
 	[Fact]
 	public void RemoveSong_WhenRemovedSongIsSelected_ClearsSelection() {
 		LoadBlankShow();
-		var entry = AddSongManually("ToRemove");
-		_vm.SelectedSong = entry;
+		var row = AddSongManually("ToRemove");
+		_vm.SelectedSong = row.Song;
 
-		_vm.RemoveSongCommand.Execute(entry);
+		_vm.RemoveSongCommand.Execute(row);
 
 		Assert.Null(_vm.SelectedSong);
 	}
@@ -393,11 +407,11 @@ public sealed class MainViewModelTests : IDisposable {
 		LoadBlankShow();
 		var keep = AddSongManually("Keep");
 		var remove = AddSongManually("Remove");
-		_vm.SelectedSong = keep;
+		_vm.SelectedSong = keep.Song;
 
 		_vm.RemoveSongCommand.Execute(remove);
 
-		Assert.Same(keep, _vm.SelectedSong);
+		Assert.Same(keep.Song, _vm.SelectedSong);
 	}
 
 	// ── Helpers ───────────────────────────────────────────────────────────────
@@ -410,10 +424,10 @@ public sealed class MainViewModelTests : IDisposable {
 	}
 
 	/// <summary>
-	/// Adds a <see cref="SongEntry"/> directly to the ViewModel's Songs collection.
+	/// Adds a <see cref="SongEntry"/> directly to the ViewModel's <see cref="MainViewModel.SongRows"/> collection.
 	/// Does NOT mark dirty — use <see cref="AddSongViaCommand"/> when dirty state is needed.
 	/// </summary>
-	private SongEntry AddSongManually(string name) {
+	private SongRowViewModel AddSongManually(string name) {
 		var entry = new SongEntry {
 			Name = name,
 			FolderPath = Path.Combine(_tempDir.FullName, name),
@@ -421,21 +435,22 @@ public sealed class MainViewModelTests : IDisposable {
 				["stem.wav"] = new ChannelSettings { Level = 1.0f, Muted = false },
 			},
 		};
-		_vm.Songs.Add(entry);
+		var row = new SongRowViewModel(entry, _vm.SongRows.Count + 1);
+		_vm.SongRows.Add(row);
 		_vm.LoadedShow!.Songs.Add(entry);
-		return entry;
+		return row;
 	}
 
 	/// <summary>
 	/// Adds a song via <see cref="MainViewModel.AddSongCommand"/>, which marks the show dirty.
 	/// Creates a real temp folder with an empty .wav stub so <see cref="SongScanner"/> accepts it.
 	/// </summary>
-	private SongEntry AddSongViaCommand(string name) {
+	private SongRowViewModel AddSongViaCommand(string name) {
 		var songDir = CreateSongDir(name, [$"{name}.wav"]);
 		_dialog.FolderToReturn = songDir;
 		_vm.AddSongCommand.Execute(null);
 		_dialog.FolderToReturn = null; // reset so future picks are clean
-		return _vm.Songs.Last();
+		return _vm.SongRows.Last();
 	}
 
 	/// <summary>Saves the current show to a temp path.</summary>

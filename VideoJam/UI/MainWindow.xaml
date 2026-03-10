@@ -13,8 +13,6 @@
         Closing="OnWindowClosing">
 
     <Window.Resources>
-        <ui:AddOneConverter x:Key="AddOne" />
-        <ui:ItemIndexConverter x:Key="ItemIndex" />
         <ui:BoolToFontStyleConverter x:Key="BoolToFontStyle" />
         <ui:VideoAudioForegroundConverter x:Key="VideoAudioForeground" />
     </Window.Resources>
@@ -77,8 +75,8 @@
 
                 <!-- Song list -->
                 <ListBox x:Name="SetlistBox"
-                         ItemsSource="{Binding Songs}"
-                         SelectedItem="{Binding SelectedSong, Mode=TwoWay}"
+                         ItemsSource="{Binding SongRows}"
+                         SelectedItem="{Binding SelectedSongRow, Mode=TwoWay}"
                          behaviours:DragDropBehaviour.IsEnabled="{Binding IsSetlistInteractive}"
                          SelectionChanged="OnSetlistSelectionChanged"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -100,20 +98,14 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
 
-                                <!-- 1-based index via MultiBinding — avoids AlternationIndex
-                                     which is unreliable during drag-and-drop operations. -->
+                                <!-- 1-based index from SongRowViewModel.DisplayIndex.
+                                     Updated in-place by RenumberSongRows() after every mutation,
+                                     so the binding fires correctly even after ObservableCollection.Move(). -->
                                 <TextBlock Grid.Column="0"
+                                           Text="{Binding DisplayIndex, StringFormat={}{0:D2}}"
                                            Foreground="Gray"
                                            FontSize="11"
-                                           VerticalAlignment="Center">
-                                    <TextBlock.Text>
-                                        <MultiBinding Converter="{StaticResource ItemIndex}"
-                                                      StringFormat="{}{0:D2}">
-                                            <Binding />
-                                            <Binding RelativeSource="{RelativeSource AncestorType=ListBox}" />
-                                        </MultiBinding>
-                                    </TextBlock.Text>
-                                </TextBlock>
+                                           VerticalAlignment="Center" />
 
                                 <!-- Song name -->
                                 <TextBlock Grid.Column="1"
