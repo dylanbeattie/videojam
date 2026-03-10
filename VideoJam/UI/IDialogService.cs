@@ -38,6 +38,18 @@ public interface IDialogService {
 	bool Confirm(string message, string title);
 
 	/// <summary>
+	/// Shows a Yes/No/Cancel confirmation dialog.
+	/// </summary>
+	/// <param name="message">Message to display.</param>
+	/// <param name="title">Dialog title.</param>
+	/// <returns>
+	/// <see langword="true"/> if the user clicked Yes;
+	/// <see langword="false"/> if the user clicked No;
+	/// <see langword="null"/> if the user clicked Cancel (abort the caller's operation).
+	/// </returns>
+	bool? Confirm3(string message, string title);
+
+	/// <summary>
 	/// Shows an error message to the user.
 	/// </summary>
 	/// <param name="message">Error message to display.</param>

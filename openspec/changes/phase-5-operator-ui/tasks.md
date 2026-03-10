@@ -55,7 +55,7 @@
 - [x] 7.1 Add display routing section to the UI (collapsible expander or tab) containing an `ItemsControl` bound to `Show.GlobalDisplayRouting`
 - [x] 7.2 Style each routing row: suffix `TextBox`, display index `TextBox` (integer), remove button — all two-way bound, with changes setting `HasUnsavedChanges`
 - [x] 7.3 Add "Add Mapping" button that appends a blank entry to `Show.GlobalDisplayRouting`
-- [x] 7.4 Add per-song override access via a small button (⚙) on each setlist row that shows/expands the song's `DisplayRoutingOverrides` in an inline area
+- [ ] 7.4 Add per-song override access via a small button (⚙) on each setlist row that shows/expands the song's `DisplayRoutingOverrides` in an inline area *(deferred to Phase 6 — playback routing is not exercised until engines are wired)*
 - [x] 7.5 Enumerate connected displays and render one fallback image row per display (index, name, current path or "(none)", "Browse…" button)
 - [x] 7.6 Implement "Browse…" button to open a PNG file picker, update `Show.FallbackImages[index]`, and set `HasUnsavedChanges`
 

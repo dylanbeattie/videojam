@@ -14,6 +14,7 @@
 
     <Window.Resources>
         <ui:AddOneConverter x:Key="AddOne" />
+        <ui:ItemIndexConverter x:Key="ItemIndex" />
         <ui:BoolToFontStyleConverter x:Key="BoolToFontStyle" />
         <ui:VideoAudioForegroundConverter x:Key="VideoAudioForeground" />
     </Window.Resources>
@@ -78,7 +79,6 @@
                 <ListBox x:Name="SetlistBox"
                          ItemsSource="{Binding Songs}"
                          SelectedItem="{Binding SelectedSong, Mode=TwoWay}"
-                         AlternationCount="10000"
                          behaviours:DragDropBehaviour.IsEnabled="{Binding IsSetlistInteractive}"
                          SelectionChanged="OnSetlistSelectionChanged"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -100,15 +100,20 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
 
-                                <!-- 1-based index -->
+                                <!-- 1-based index via MultiBinding — avoids AlternationIndex
+                                     which is unreliable during drag-and-drop operations. -->
                                 <TextBlock Grid.Column="0"
                                            Foreground="Gray"
                                            FontSize="11"
-                                           VerticalAlignment="Center"
-                                           Text="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem},
-                                                          Path=(ItemsControl.AlternationIndex),
-                                                          Converter={StaticResource AddOne},
-                                                          StringFormat={}{0:D2}}" />
+                                           VerticalAlignment="Center">
+                                    <TextBlock.Text>
+                                        <MultiBinding Converter="{StaticResource ItemIndex}"
+                                                      StringFormat="{}{0:D2}">
+                                            <Binding />
+                                            <Binding RelativeSource="{RelativeSource AncestorType=ListBox}" />
+                                        </MultiBinding>
+                                    </TextBlock.Text>
+                                </TextBlock>
 
                                 <!-- Song name -->
                                 <TextBlock Grid.Column="1"

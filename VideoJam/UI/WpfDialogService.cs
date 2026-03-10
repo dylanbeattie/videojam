@@ -48,6 +48,20 @@ internal sealed class WpfDialogService : IDialogService {
 	}
 
 	/// <inheritdoc />
+	public bool? Confirm3(string message, string title) {
+		var result = MessageBox.Show(
+			message,
+			title,
+			MessageBoxButton.YesNoCancel,
+			MessageBoxImage.Question);
+		return result switch {
+			MessageBoxResult.Yes    => true,
+			MessageBoxResult.No     => false,
+			_                       => null,   // Cancel or dialog closed
+		};
+	}
+
+	/// <inheritdoc />
 	public void ShowError(string message, string title) {
 		MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Error);
 	}

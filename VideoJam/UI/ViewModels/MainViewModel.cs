@@ -204,11 +204,22 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 
 	/// <summary>
 	/// Called from <c>MainWindow.OnClosing</c>: applies the unsaved-changes guard and returns
-	/// <see langword="true"/> if the close should be cancelled (i.e. user clicked Cancel).
+	/// <see langword="true"/> if the window close should be cancelled (user clicked Cancel).
 	/// </summary>
 	public bool ConfirmClose() {
 		if (!_hasUnsavedChanges) return false;
-		return !ApplyUnsavedChangesGuard();
+
+		bool? result = _dialogService.Confirm3(
+			"You have unsaved changes. Save before closing?",
+			"Unsaved Changes");
+
+		if (result is null) return true;   // Cancel → abort the close
+
+		if (result == true) {
+			ExecuteSaveShow();
+			if (_hasUnsavedChanges) return true;  // Save failed or was itself cancelled → abort close
+		}
+		return false;  // No → allow the window to close without saving
 	}
 
 	// ── Command implementations ───────────────────────────────────────────────
@@ -238,8 +249,12 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 					Muted = ch.Type == AudioChannelType.VideoAudio,
 				});
 
-		// Store the absolute folder path so ShowFileService.Save() can relativize it at
-		// write time, regardless of whether a .show file path is known yet.
+		// NOTE (W2): We deliberately do NOT call SongEntry.CreateFromScan() here.
+		// CreateFromScan() calls PathResolver.MakeRelative() at scan time, which requires
+		// a known .show file path. When no show has been saved yet that path is unknown.
+		// Instead we store the absolute folder path and defer relativisation to
+		// ShowFileService.Save(), which calls ToRelativePaths() at write time.
+		// If CreateFromScan() ever gains new channel-default logic this path must be kept in sync.
 		var entry = new SongEntry {
 			FolderPath = folderPath,
 			Name = Path.GetFileName(folderPath),
@@ -341,8 +356,9 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 
 	private void ExecuteAddRoutingEntry() {
 		if (_loadedShow is null) return;
-		var entry = new DisplayRoutingEntryViewModel(string.Empty, 0, OnRoutingEntryChanged);
-		entry.PropertyChanged += OnRoutingEntryPropertyChanged;
+		// S1: Use only the constructor callback for dirty tracking — do NOT also subscribe to
+		// PropertyChanged, as that would fire MarkDirty() twice per property change.
+		var entry = new DisplayRoutingEntryViewModel(string.Empty, 0, MarkDirty);
 		GlobalRoutingEntries.Add(entry);
 		// Actual dictionary update happens in SyncRoutingToModel() at save time.
 		MarkDirty();
@@ -350,7 +366,6 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 
 	private void ExecuteRemoveRoutingEntry(DisplayRoutingEntryViewModel? entry) {
 		if (entry is null) return;
-		entry.PropertyChanged -= OnRoutingEntryPropertyChanged;
 		GlobalRoutingEntries.Remove(entry);
 		_loadedShow?.GlobalDisplayRouting.Remove(entry.Suffix);
 		MarkDirty();
@@ -362,39 +377,38 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 			$"Select fallback image for Display {entry.DisplayIndex}",
 			"PNG images|*.png|All files|*.*");
 		if (path is null) return;
+		// S1: entry.ImagePath setter calls the MarkDirty callback — no need to call it again.
 		entry.ImagePath = path;
 		if (_loadedShow is not null)
 			_loadedShow.FallbackImages[entry.DisplayIndex] = path;
-		MarkDirty();
 	}
 
 	// ── Unsaved-changes guard ─────────────────────────────────────────────────
 
 	/// <summary>
-	/// Applies the unsaved-changes guard:
+	/// Applies the unsaved-changes guard before a destructive operation (New / Open):
 	/// <list type="bullet">
-	///   <item>If no unsaved changes exist, returns <see langword="true"/> (proceed).</item>
-	///   <item>If the user confirms (Yes), saves first then returns <see langword="true"/>.</item>
-	///   <item>If the user declines (No), discards changes and returns <see langword="true"/>.</item>
-	///   <item>If there is no way to cancel (only when the dialog returns false), returns <see langword="false"/> (abort).</item>
+	///   <item>No unsaved changes → returns <see langword="true"/> (proceed immediately).</item>
+	///   <item>Yes → saves first; returns <see langword="true"/> on success, <see langword="false"/> if save fails.</item>
+	///   <item>No → discards changes and returns <see langword="true"/> (proceed without saving).</item>
+	///   <item>Cancel → returns <see langword="false"/> (abort — do not perform the operation).</item>
 	/// </list>
-	/// Uses a three-button MessageBox (Yes / No / Cancel) equivalent via a two-step dialog.
 	/// </summary>
 	/// <returns><see langword="true"/> to proceed; <see langword="false"/> to abort.</returns>
 	private bool ApplyUnsavedChangesGuard() {
 		if (!_hasUnsavedChanges) return true;
 
-		// Ask: Save changes?
-		bool save = _dialogService.Confirm(
+		bool? result = _dialogService.Confirm3(
 			"You have unsaved changes. Save before continuing?",
 			"Unsaved Changes");
 
-		if (save) {
+		if (result is null) return false;   // Cancel → abort
+
+		if (result == true) {
 			ExecuteSaveShow();
-			// If save failed (still dirty), abort.
-			if (_hasUnsavedChanges) return false;
+			if (_hasUnsavedChanges) return false;  // Save failed or was cancelled → abort
 		}
-		return true;
+		return true;  // No → discard and proceed; Yes+saved → proceed
 	}
 
 	// ── Show application helpers ──────────────────────────────────────────────
@@ -411,9 +425,8 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 
 		GlobalRoutingEntries.Clear();
 		foreach (var kvp in show.GlobalDisplayRouting) {
-			var entry = new DisplayRoutingEntryViewModel(kvp.Key, kvp.Value, OnRoutingEntryChanged);
-			entry.PropertyChanged += OnRoutingEntryPropertyChanged;
-			GlobalRoutingEntries.Add(entry);
+			// S1: Use only the constructor callback for dirty tracking — no PropertyChanged subscription.
+			GlobalRoutingEntries.Add(new DisplayRoutingEntryViewModel(kvp.Key, kvp.Value, MarkDirty));
 		}
 
 		RefreshFallbackDisplayEntries();
@@ -491,12 +504,6 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 		};
 	}
 
-	// ── Routing entry property watcher ────────────────────────────────────────
-
-	private void OnRoutingEntryPropertyChanged(object? sender, PropertyChangedEventArgs e) =>
-		MarkDirty();
-
-	private void OnRoutingEntryChanged() => MarkDirty();
 
 	// ── INotifyPropertyChanged ────────────────────────────────────────────────
 

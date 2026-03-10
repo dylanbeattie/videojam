@@ -219,7 +219,7 @@ public sealed class MainViewModelTests : IDisposable {
 		LoadBlankShow();
 		AddSongManually("ToBeCleared");
 
-		_dialog.ConfirmResult = false; // decline save
+		_dialog.Confirm3Result = false; // decline save
 		_vm.NewShowCommand.Execute(null);
 
 		Assert.Empty(_vm.Songs);
@@ -232,10 +232,10 @@ public sealed class MainViewModelTests : IDisposable {
 		AddSongViaCommand("DirtyEntry");
 		Assert.True(_vm.HasUnsavedChanges);
 
-		_dialog.ConfirmResult = false; // decline save, proceed
+		_dialog.Confirm3Result = false; // decline save, proceed
 		_vm.NewShowCommand.Execute(null);
 
-		Assert.True(_dialog.ConfirmWasCalled);
+		Assert.True(_dialog.Confirm3WasCalled);
 	}
 
 	[Fact]
@@ -245,7 +245,7 @@ public sealed class MainViewModelTests : IDisposable {
 
 		_vm.NewShowCommand.Execute(null);
 
-		Assert.False(_dialog.ConfirmWasCalled);
+		Assert.False(_dialog.Confirm3WasCalled);
 	}
 
 	// ── Open command ──────────────────────────────────────────────────────────
@@ -262,7 +262,7 @@ public sealed class MainViewModelTests : IDisposable {
 		// Now open a fresh VM and open the same file.
 		var vm2 = new MainViewModel(_dialog);
 		_dialog.OpenPathToReturn = showPath;
-		_dialog.ConfirmResult = false;
+		_dialog.Confirm3Result = false;
 		vm2.OpenShowCommand.Execute(null);
 
 		Assert.Single(vm2.Songs);
@@ -340,7 +340,7 @@ public sealed class MainViewModelTests : IDisposable {
 		AddSongViaCommand("Dirty");
 		var savePath = Path.Combine(_tempDir.FullName, "AutoSaved.show");
 		_dialog.SavePathToReturn = savePath;
-		_dialog.ConfirmResult = true; // user clicks Yes
+		_dialog.Confirm3Result = true; // user clicks Yes
 
 		// Trigger guard via NewShow
 		_vm.NewShowCommand.Execute(null);
@@ -352,13 +352,27 @@ public sealed class MainViewModelTests : IDisposable {
 	[Fact]
 	public void UnsavedChangesGuard_WhenDeclined_ProceedsWithoutSaving() {
 		LoadBlankShow();
-		AddSongManually("Dirty");
-		_dialog.ConfirmResult = false; // user clicks No
+		AddSongViaCommand("Dirty");
+		_dialog.Confirm3Result = false; // user clicks No
 
 		_vm.NewShowCommand.Execute(null);
 
 		// Proceeded — songs cleared
 		Assert.Empty(_vm.Songs);
+	}
+
+	[Fact]
+	public void UnsavedChangesGuard_WhenCancelled_AbortsOperation() {
+		LoadBlankShow();
+		AddSongViaCommand("Dirty");
+		var songCountBefore = _vm.Songs.Count;
+		_dialog.Confirm3Result = null; // user clicks Cancel
+
+		_vm.NewShowCommand.Execute(null);
+
+		// Aborted — show unchanged
+		Assert.Equal(songCountBefore, _vm.Songs.Count);
+		Assert.True(_vm.HasUnsavedChanges);
 	}
 
 	// ── Remove song ───────────────────────────────────────────────────────────
@@ -390,7 +404,7 @@ public sealed class MainViewModelTests : IDisposable {
 
 	/// <summary>Creates a new blank show in the ViewModel without any guard dialogs.</summary>
 	private void LoadBlankShow() {
-		_dialog.ConfirmResult = false;
+		_dialog.Confirm3Result = false;
 		_vm.NewShowCommand.Execute(null);
 		_dialog.ResetCallTracking();
 	}
@@ -433,7 +447,7 @@ public sealed class MainViewModelTests : IDisposable {
 
 	/// <summary>Executes New Show with decline-guard so dirty flag is reset cleanly.</summary>
 	private void ExecuteNewShow() {
-		_dialog.ConfirmResult = false;
+		_dialog.Confirm3Result = false;
 		_vm.NewShowCommand.Execute(null);
 		_dialog.ResetCallTracking();
 	}
@@ -458,13 +472,18 @@ internal sealed class FakeDialogService : IDialogService {
 	public string? FolderToReturn { get; set; }
 	public string? OpenPathToReturn { get; set; }
 	public string? SavePathToReturn { get; set; }
-	public bool ConfirmResult { get; set; } = true;
 
-	public bool ConfirmWasCalled { get; private set; }
+	/// <summary>
+	/// Return value for the three-way <see cref="Confirm3"/> dialog.
+	/// <see langword="true"/> = Yes, <see langword="false"/> = No, <see langword="null"/> = Cancel.
+	/// </summary>
+	public bool? Confirm3Result { get; set; } = false;
+
+	public bool Confirm3WasCalled { get; private set; }
 	public bool SavePickerWasCalled { get; private set; }
 
 	public void ResetCallTracking() {
-		ConfirmWasCalled = false;
+		Confirm3WasCalled = false;
 		SavePickerWasCalled = false;
 	}
 
@@ -476,9 +495,12 @@ internal sealed class FakeDialogService : IDialogService {
 		return SavePathToReturn;
 	}
 
-	public bool Confirm(string message, string title) {
-		ConfirmWasCalled = true;
-		return ConfirmResult;
+	// Two-way Confirm is no longer used by the ViewModel — kept to satisfy the interface.
+	public bool Confirm(string message, string title) => Confirm3Result == true;
+
+	public bool? Confirm3(string message, string title) {
+		Confirm3WasCalled = true;
+		return Confirm3Result;
 	}
 
 	public void ShowError(string message, string title) { /* no-op in tests */ }
