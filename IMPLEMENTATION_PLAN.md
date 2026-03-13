@@ -20,14 +20,14 @@
 
 | Phase | Name | Goal | Key Risk |
 |-------|------|------|----------|
-| 1 | Foundation & Audio Engine | Multiple stems play in sync to WASAPI output | WASAPI pipeline stability |
-| 2 | Video Engine & A/V Sync | Single video + audio stems start in sync | LibVLC HWND integration with WPF |
-| 3 | Multi-Display | Correct video on correct display; fallback PNG | DPI scaling; monitor enumeration edge cases |
-| 4 | Show Model & Persistence | `.show` files save, load, and resolve paths | Path relativisation across machines |
-| 5 | Operator UI | Full WPF interface: setlist, mixer, show management | Drag-and-drop; UI state binding |
-| 6 | Playback Control & Integration | Full end-to-end performance workflow | State machine correctness; global hotkey hook |
-| 7 | Hardening | Graceful error handling; logging; edge cases | Display disconnect audio isolation |
-| 8 | Release Packaging | Self-contained portable zip; clean-machine test | Native VLC binary packaging |
+| [1](#phase-1-foundation--audio-engine) | Foundation & Audio Engine | Multiple stems play in sync to WASAPI output | WASAPI pipeline stability |
+| [2](#phase-2-video-engine--av-synchronisation) | Video Engine & A/V Sync | Single video + audio stems start in sync | LibVLC HWND integration with WPF |
+| [3](#phase-3-multi-display--display-management) | Multi-Display | Correct video on correct display; fallback PNG | DPI scaling; monitor enumeration edge cases |
+| [4](#phase-4-show-model--persistence) | Show Model & Persistence | `.show` files save, load, and resolve paths | Path relativisation across machines |
+| [5](#phase-5-operator-ui) | Operator UI | Full WPF interface: setlist, mixer, show management | Drag-and-drop; UI state binding |
+| [6](#phase-6-playback-control--integration) | Playback Control & Integration | Full end-to-end performance workflow | State machine correctness; global hotkey hook |
+| [7](#phase-7-hardening) | Hardening | Graceful error handling; logging; edge cases | Display disconnect audio isolation |
+| [8](#phase-8-release-packaging) | Release Packaging | Self-contained portable zip; clean-machine test | Native VLC binary packaging |
 
 ---
 
