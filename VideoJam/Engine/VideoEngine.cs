@@ -76,9 +76,12 @@ internal sealed class VideoEngine : IDisposable, IVideoPlayback {
 	/// <remarks>
 	/// <para>
 	/// Pre-buffering works by calling <c>MediaPlayer.Play()</c>, waiting for the
-	/// <c>Paused</c> state event (up to <see cref="PRE_BUFFER_TIMEOUT_MS"/> ms), then seeking
-	/// back to position 0. This primes the VLC decoder pipeline, eliminating the cold-start
-	/// latency (~150–400 ms) from the A/V sync path.
+	/// <c>Playing</c> state event (VLC decoder pipeline warm), calling <c>SetPause(true)</c>
+	/// from within the <c>Playing</c> handler, then waiting for the <c>Paused</c> event
+	/// (up to <see cref="PRE_BUFFER_TIMEOUT_MS"/> ms total), and finally seeking back to
+	/// position 0. This race-free sequence eliminates the concurrent-load failure where
+	/// <c>SetPause(true)</c> was called while VLC was still in <c>Opening</c> state and
+	/// silently ignored the request.
 	/// </para>
 	/// <para>
 	/// If the pre-buffer times out, the player is disposed and the method returns without
@@ -126,10 +129,20 @@ internal sealed class VideoEngine : IDisposable, IVideoPlayback {
 		player.Media = media;
 
 		// ── Pre-buffer sequence ───────────────────────────────────────────────
-		// Play → wait for Paused event (decoder primed) → seek to 0.
+		// Subscribe to Playing and Paused BEFORE calling Play() to avoid a race where
+		// VLC fires Playing before our handler is attached.
+		//
+		// Step 1: Play() kicks off VLC's async decoder pipeline.
+		// Step 2: OnPlayerPlaying fires on a VLC internal thread once the decoder is warm.
+		//         It calls SetPause(true) — now safe because VLC is in Playing state —
+		//         then unsubscribes itself so it does not fire again.
+		// Step 3: OnPlayerPaused fires on a VLC internal thread once the pause is confirmed.
+		//         It signals the TCS, unblocking the await below.
+		// Step 4: We seek to position 0 and register the slot.
 		var prebufferTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-		player.Paused += OnPlayerPaused;
+		player.Playing += OnPlayerPlaying;
+		player.Paused  += OnPlayerPaused;
 
 		using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 		timeoutCts.CancelAfter(PRE_BUFFER_TIMEOUT_MS);
@@ -137,8 +150,6 @@ internal sealed class VideoEngine : IDisposable, IVideoPlayback {
 		bool prebufferSucceeded;
 		try {
 			player.Play();
-			// Immediately pause so VLC primes the decoder but does not run the clock.
-			player.SetPause(true);
 			await prebufferTcs.Task.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
 			prebufferSucceeded = true;
 		}
@@ -160,7 +171,9 @@ internal sealed class VideoEngine : IDisposable, IVideoPlayback {
 			prebufferSucceeded = false;
 		}
 		finally {
-			player.Paused -= OnPlayerPaused;
+			// Always unsubscribe both handlers; they may not have fired yet on timeout/cancellation.
+			player.Playing -= OnPlayerPlaying;
+			player.Paused  -= OnPlayerPaused;
 		}
 
 		if (!prebufferSucceeded) {
@@ -181,7 +194,17 @@ internal sealed class VideoEngine : IDisposable, IVideoPlayback {
 			"Video pre-buffer complete for {File} on display {DisplayIndex}.",
 			videoFile.File.Name, displayIndex);
 
-		// Local helper — signal the TCS from the VLC event thread.
+		// ── Local event handlers (VLC internal thread) ────────────────────────
+
+		// Called when VLC reaches Playing state — decoder pipeline is warm and a pause
+		// request will be honoured. Immediately gates SetPause(true) and unsubscribes
+		// itself so subsequent Play() calls on this player do not re-trigger it.
+		void OnPlayerPlaying(object? s, EventArgs e) {
+			player.Playing -= OnPlayerPlaying;
+			player.SetPause(true);
+		}
+
+		// Called when VLC confirms it has paused — signals the awaitable TCS.
 		void OnPlayerPaused(object? s, EventArgs e) => prebufferTcs.TrySetResult(true);
 	}
 

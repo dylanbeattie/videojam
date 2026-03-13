@@ -1,11 +1,12 @@
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media.Imaging;
 
 namespace VideoJam.UI;
 
 /// <summary>
-/// A borderless, topmost WPF window that covers a single physical display.
+/// A borderless WPF window that covers a single physical display.
 /// Each instance is associated with one LibVLC <c>MediaPlayer</c> which renders
 /// directly into the window's HWND via <see cref="Hwnd"/>.
 /// </summary>
@@ -17,6 +18,11 @@ namespace VideoJam.UI;
 /// </list>
 /// Call <see cref="SetBounds"/> before <see cref="Window.Show"/> to position the window
 /// on the correct physical display in device-independent units.
+/// <para>
+/// Pressing <c>Ctrl+Tab</c> while this window has keyboard focus activates
+/// <see cref="Application.Current"/> <c>.MainWindow</c>, returning the operator to the
+/// operator UI without requiring the mouse.
+/// </para>
 /// </remarks>
 public partial class VlcDisplayWindow : Window {
 	// ── Public API ────────────────────────────────────────────────────────────
@@ -71,5 +77,16 @@ public partial class VlcDisplayWindow : Window {
 
 	private void OnLoaded(object sender, RoutedEventArgs e) {
 		Hwnd = new WindowInteropHelper(this).Handle;
+	}
+
+	/// <summary>
+	/// Handles <c>Ctrl+Tab</c> to return keyboard focus to the operator UI (<c>MainWindow</c>).
+	/// This is view-lifecycle glue: no business logic resides here.
+	/// </summary>
+	private void OnKeyDown(object sender, KeyEventArgs e) {
+		if (e.Key == Key.Tab && Keyboard.Modifiers == ModifierKeys.Control) {
+			Application.Current.MainWindow?.Activate();
+			e.Handled = true;
+		}
 	}
 }

@@ -3,9 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         WindowStyle="None"
         ResizeMode="NoResize"
-        Topmost="True"
         Background="Black"
-        Title="VideoJam Display">
+        Title="VideoJam Display"
+        KeyDown="OnKeyDown">
     <Grid Background="Black">
         <!-- VLC render surface host — LibVLC renders directly into this element's HWND.
              Must sit below the fallback image so ShowVideo()/ShowFallback() can toggle. -->
