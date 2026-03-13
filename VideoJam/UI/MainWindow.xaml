@@ -6,6 +6,7 @@
         xmlns:vm="clr-namespace:VideoJam.UI.ViewModels"
         xmlns:ui="clr-namespace:VideoJam.UI"
         xmlns:behaviours="clr-namespace:VideoJam.UI.Behaviours"
+        xmlns:engine="clr-namespace:VideoJam.Model"
         mc:Ignorable="d"
         Title="{Binding WindowTitle}"
         Height="640" Width="900"
@@ -36,6 +37,71 @@
                           Command="{Binding SaveAsShowCommand}" />
             </MenuItem>
         </Menu>
+
+        <!-- ═══════════════════════════════════════════════════════════════════
+             Playback toolbar
+             ═══════════════════════════════════════════════════════════════════ -->
+        <ToolBarTray DockPanel.Dock="Top">
+            <ToolBar>
+
+                <!-- Go button — command's CanExecute handles enabled state -->
+                <Button Content="&#x25B6; Go"
+                        Command="{Binding GoCommand}"
+                        ToolTip="Start playback (Space)" />
+
+                <!-- Pause button — visible only when Playing -->
+                <Button Content="&#x23F8; Pause"
+                        Command="{Binding StopAndRewindCommand}"
+                        ToolTip="Pause playback (Escape)">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding PlaybackState}"
+                                             Value="{x:Static engine:PlaybackState.Playing}">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+
+                <!-- Stop/Rewind button — visible only when Paused -->
+                <Button Content="&#x23EE; Stop"
+                        Command="{Binding StopAndRewindCommand}"
+                        ToolTip="Stop and rewind to start (Escape)">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding PlaybackState}"
+                                             Value="{x:Static engine:PlaybackState.Paused}">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+
+                <!-- Loading indicator — visible only when IsLoading == true -->
+                <TextBlock FontStyle="Italic"
+                           VerticalAlignment="Center"
+                           Margin="8,0,0,0">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Setter Property="Text" Value="Loading&#x2026;" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsLoading}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+            </ToolBar>
+        </ToolBarTray>
 
         <!-- ═══════════════════════════════════════════════════════════════════
              Status bar
