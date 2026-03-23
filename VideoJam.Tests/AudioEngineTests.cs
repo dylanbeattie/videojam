@@ -54,7 +54,7 @@ public sealed class AudioEngineTests : IDisposable {
 	/// seeded to <paramref name="initialVolume"/>.
 	/// </summary>
 	private static VolumeSampleProvider MakeProvider(float initialVolume = 1.0f) =>
-		new(new SilenceProvider(TestFormat)) { Volume = initialVolume };
+		new(new WaveToSampleProvider(new SilenceProvider(TestFormat))) { Volume = initialVolume };
 
 	// ── Tests ─────────────────────────────────────────────────────────────────
 
