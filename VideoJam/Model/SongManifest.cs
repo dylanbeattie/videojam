@@ -26,20 +26,21 @@ public sealed record AudioChannelManifest(
 	AudioChannelType Type);
 
 /// <summary>
-/// Describes a video file resolved from a song folder scan, including its target display.
+/// Describes a video file resolved from a song folder scan, including its playback slot.
 /// Immutable; never persisted.
 /// </summary>
 /// <param name="File">The video file on disk.</param>
-/// <param name="DisplayIndex">
-/// The index of the display this video should be routed to (0 = primary/laptop).
+/// <param name="SlotIndex">
+/// The 0-based slot index assigned to this video file, determined by alphabetical sort order
+/// of video filenames within the song folder.
 /// </param>
 /// <param name="Suffix">
-/// The underscore-prefixed filename suffix used for display routing
+/// The underscore-prefixed filename suffix extracted from the filename stem
 /// (e.g. <c>_lyrics</c>, <c>_visuals</c>). Empty string if no suffix.
 /// </param>
 public sealed record VideoFileManifest(
 	FileInfo File,
-	int DisplayIndex,
+	int SlotIndex,
 	string Suffix);
 
 /// <summary>

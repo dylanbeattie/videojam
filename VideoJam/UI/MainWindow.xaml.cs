@@ -40,14 +40,21 @@ public partial class MainWindow : Window {
 	}
 
 	/// <summary>
-	/// Prevents song selection clicks when the setlist is not interactive (i.e. during playback).
-	/// The <c>SelectionChanged</c> event fires before <c>IsEnabled</c> binding updates, so we
-	/// guard selection changes here and revert them when the ViewModel says not to allow selection.
+	/// Handles setlist selection changes. When the setlist is interactive, routes the click to
+	/// <see cref="MainViewModel.CueSongCommand"/> so the song is cued via the PlaybackEngine.
+	/// Reverts the selection when the setlist is not interactive (during playback).
 	/// </summary>
 	private void OnSetlistSelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e) {
 		if (ViewModel is { IsSetlistInteractive: false }) {
 			// Revert — do not allow selection changes during playback.
-			SetlistBox.SelectedItem = ViewModel.SelectedSong;
+			SetlistBox.SelectedItem = ViewModel.SelectedSongRow;
+			return;
+		}
+
+		if (ViewModel is not null &&
+		    SetlistBox.SelectedItem is VideoJam.UI.ViewModels.SongRowViewModel row &&
+		    ViewModel.CueSongCommand.CanExecute(row)) {
+			ViewModel.CueSongCommand.Execute(row);
 		}
 	}
 }

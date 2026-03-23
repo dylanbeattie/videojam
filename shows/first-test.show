@@ -2,6 +2,49 @@
   "version": 1,
   "songs": [
     {
+      "folderPath": "../../Dropbox/Claude Stuff/Count Claudula/Stems",
+      "name": "Stems",
+      "displayRoutingOverrides": {},
+      "channels": {
+        "Bar Count.wav": {
+          "level": 1,
+          "muted": true
+        },
+        "Bass Guitar.wav": {
+          "level": 1,
+          "muted": true
+        },
+        "Click.wav": {
+          "level": 1,
+          "muted": true
+        },
+        "Drum Kit.wav": {
+          "level": 1,
+          "muted": true
+        },
+        "Grand Piano.wav": {
+          "level": 1,
+          "muted": true
+        },
+        "Strings.wav": {
+          "level": 1,
+          "muted": true
+        },
+        "video_audience.mp4:audio": {
+          "level": 1,
+          "muted": true
+        },
+        "video_performers.mp4:audio": {
+          "level": 1,
+          "muted": true
+        },
+        "zzz-not-a-video.mp4:audio": {
+          "level": 1,
+          "muted": true
+        }
+      }
+    },
+    {
       "folderPath": "../../Dropbox/Creative/Backing Tracks/Stems/Linkin Park - In The End",
       "name": "Linkin Park - In The End",
       "displayRoutingOverrides": {},
@@ -61,49 +104,6 @@
         "Tambourine.mp3": {
           "level": 1,
           "muted": false
-        }
-      }
-    },
-    {
-      "folderPath": "../../Dropbox/Claude Stuff/Count Claudula/Stems",
-      "name": "Stems",
-      "displayRoutingOverrides": {},
-      "channels": {
-        "Bar Count.wav": {
-          "level": 1,
-          "muted": false
-        },
-        "Bass Guitar.wav": {
-          "level": 1,
-          "muted": false
-        },
-        "Click.wav": {
-          "level": 1,
-          "muted": false
-        },
-        "Drum Kit.wav": {
-          "level": 1,
-          "muted": false
-        },
-        "Grand Piano.wav": {
-          "level": 1,
-          "muted": false
-        },
-        "Strings.wav": {
-          "level": 1,
-          "muted": false
-        },
-        "video_audience.mp4:audio": {
-          "level": 1,
-          "muted": true
-        },
-        "video_performers.mp4:audio": {
-          "level": 1,
-          "muted": true
-        },
-        "zzz-not-a-video.mp4:audio": {
-          "level": 1,
-          "muted": true
         }
       }
     },

@@ -4,7 +4,7 @@
 The system SHALL define the following immutable record types for in-memory use (not persisted):
 - `SongManifest(string SongName, DirectoryInfo Folder, IReadOnlyList<AudioChannelManifest> AudioChannels, IReadOnlyList<VideoFileManifest> VideoFiles)`
 - `AudioChannelManifest(FileInfo File, string ChannelId, AudioChannelType Type)` where `File` refers to the media file on disk and `ChannelId` is the channel identifier used as a key in the show file
-- `VideoFileManifest(FileInfo File, int DisplayIndex, string Suffix)` where `File` refers to the video file on disk and `Suffix` is the underscore-prefixed filename suffix (e.g. `_lyrics`)
+- `VideoFileManifest(FileInfo File, int SlotIndex)` where `File` refers to the video file on disk and `SlotIndex` is the zero-based sequential index assigned by `SongScanner` in alphabetical filename order
 - `AudioChannelType` enum with values `Stem` and `VideoAudio`
 
 #### Scenario: Records are value-equal when constructed with identical arguments
@@ -23,15 +23,20 @@ The system SHALL define the following immutable record types for in-memory use (
 
 ### Requirement: Persisted show model classes are defined
 The system SHALL define the following mutable classes for JSON persistence:
-- `Show` with properties: `int Version`, `List<SongEntry> Songs`, `Dictionary<string, int> GlobalDisplayRouting`, `Dictionary<int, string> FallbackImages`
-- `SongEntry` with properties: `string FolderPath`, `string Name`, `Dictionary<string, int> DisplayRoutingOverrides`, `Dictionary<string, ChannelSettings> Channels`
+- `Show` with properties: `int Version` (default `2`), `List<SongEntry> Songs`, `string? FallbackImagePath`, `Dictionary<int, VideoWindowLayout> VideoWindowLayouts`
+- `SongEntry` with properties: `string FolderPath`, `string Name`, `Dictionary<string, ChannelSettings> Channels`
 - `ChannelSettings` with properties: `float Level`, `bool Muted`
+- `VideoWindowLayout` with properties: `double Left`, `double Top`, `double Width`, `double Height`, `bool IsMaximised`
 
-> **Note:** `SongEntry.FolderPath` and the values in `Show.FallbackImages` are intentionally typed as `string`. These are *relative* paths stored in the JSON `.show` file; they are not resolvable in isolation and require the `.show` file's own directory to be combined via `PathResolver` before a `DirectoryInfo` or `FileInfo` can be constructed from them. Path resolution is a Phase 4 concern.
+> **Note:** `SongEntry.FolderPath` and `Show.FallbackImagePath` are intentionally typed as `string`. These are *relative* paths stored in the JSON `.show` file; they are not resolvable in isolation and require the `.show` file's own directory to be combined via `PathResolver` before a `DirectoryInfo` or `FileInfo` can be constructed from them.
 
-#### Scenario: Show has a version field defaulting to 1
+#### Scenario: Show has a version field defaulting to 2
 - **WHEN** a new `Show` instance is constructed with `new Show()`
-- **THEN** `Version` is `1`
+- **THEN** `Version` is `2`
+
+#### Scenario: Show VideoWindowLayouts is initialised empty
+- **WHEN** a new `Show` instance is constructed
+- **THEN** `VideoWindowLayouts` is a non-null, empty `Dictionary<int, VideoWindowLayout>`
 
 #### Scenario: SongEntry channel dictionary is initialised empty
 - **WHEN** a new `SongEntry` is constructed
@@ -78,7 +83,3 @@ The system SHALL provide `SongEntry.CreateFromScan(SongManifest manifest, string
 #### Scenario: Channels dictionary is keyed by ChannelId from the manifest
 - **WHEN** `CreateFromScan` processes audio channels
 - **THEN** each entry in `SongEntry.Channels` is keyed by the `AudioChannelManifest.ChannelId` value
-
-#### Scenario: DisplayRoutingOverrides is initialised empty
-- **WHEN** `CreateFromScan` is called
-- **THEN** `SongEntry.DisplayRoutingOverrides` is a non-null, empty dictionary

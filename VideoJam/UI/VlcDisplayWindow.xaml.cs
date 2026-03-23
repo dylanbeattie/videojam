@@ -2,11 +2,12 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media.Imaging;
+using VideoJam.Model;
 
 namespace VideoJam.UI;
 
 /// <summary>
-/// A borderless WPF window that covers a single physical display.
+/// A freely positionable, resizable WPF window used to display video for a single slot.
 /// Each instance is associated with one LibVLC <c>MediaPlayer</c> which renders
 /// directly into the window's HWND via <see cref="Hwnd"/>.
 /// </summary>
@@ -16,8 +17,9 @@ namespace VideoJam.UI;
 ///   <item><b>Fallback</b> — a static PNG image fills the window (default state)</item>
 ///   <item><b>Video</b> — the LibVLC render surface is the foreground layer</item>
 /// </list>
-/// Call <see cref="SetBounds"/> before <see cref="Window.Show"/> to position the window
-/// on the correct physical display in device-independent units.
+/// Windows are keyed by <see cref="SlotIndex"/> and reused across songs. Closing the
+/// window hides it rather than destroying it; use <see cref="ForceClose"/> during
+/// application shutdown to bypass this guard.
 /// <para>
 /// Pressing <c>Ctrl+Tab</c> while this window has keyboard focus activates
 /// <see cref="Application.Current"/> <c>.MainWindow</c>, returning the operator to the
@@ -33,15 +35,32 @@ public partial class VlcDisplayWindow : Window {
 	/// </summary>
 	public nint Hwnd { get; private set; }
 
+	/// <summary>The slot index this window represents. Used for the title bar.</summary>
+	public int SlotIndex { get; set; }
+
 	/// <inheritdoc />
 	public VlcDisplayWindow() {
 		InitializeComponent();
 		Loaded += OnLoaded;
 	}
 
+	/// <summary>Updates the window title to reflect the slot index.</summary>
+	public void UpdateTitle() {
+		Title = $"VideoJam \u2014 Video {SlotIndex + 1}";
+	}
+
 	/// <summary>
-	/// Positions and sizes the window on the target display using device-independent units.
-	/// Call this before <see cref="Window.Show"/> so the window appears on the correct screen.
+	/// Closes the window permanently, bypassing the hide-on-close behaviour.
+	/// Used only during application shutdown.
+	/// </summary>
+	public void ForceClose() {
+		_forceClose = true;
+		Close();
+	}
+
+	/// <summary>
+	/// Positions and sizes the window using device-independent units.
+	/// Call this before <see cref="Window.Show"/> to set the initial position.
 	/// </summary>
 	/// <param name="left">Left edge in device-independent pixels (physical pixels ÷ DPI scale).</param>
 	/// <param name="top">Top edge in device-independent pixels.</param>
@@ -52,6 +71,36 @@ public partial class VlcDisplayWindow : Window {
 		Top = top;
 		Width = width;
 		Height = height;
+	}
+
+	/// <summary>
+	/// Captures the current window position and size for persistence.
+	/// Uses <see cref="RestoreBounds"/> so that the non-maximised position is captured
+	/// even when the window is currently maximised.
+	/// </summary>
+	public VideoWindowLayout GetLayout() {
+		var bounds = WindowState == WindowState.Maximized
+			? RestoreBounds
+			: new Rect(Left, Top, Width, Height);
+		return new VideoWindowLayout {
+			Left = bounds.Left,
+			Top = bounds.Top,
+			Width = bounds.Width,
+			Height = bounds.Height,
+			IsMaximised = WindowState == WindowState.Maximized,
+		};
+	}
+
+	/// <summary>
+	/// Applies a saved layout to this window.
+	/// </summary>
+	public void ApplyLayout(VideoWindowLayout layout) {
+		Left = layout.Left;
+		Top = layout.Top;
+		Width = layout.Width;
+		Height = layout.Height;
+		if (layout.IsMaximised)
+			WindowState = WindowState.Maximized;
 	}
 
 	/// <summary>
@@ -75,8 +124,20 @@ public partial class VlcDisplayWindow : Window {
 
 	// ── Private helpers ───────────────────────────────────────────────────────
 
+	private bool _forceClose;
+
 	private void OnLoaded(object sender, RoutedEventArgs e) {
 		Hwnd = new WindowInteropHelper(this).Handle;
+	}
+
+	/// <inheritdoc />
+	protected override void OnClosing(System.ComponentModel.CancelEventArgs e) {
+		if (!_forceClose) {
+			e.Cancel = true;
+			Hide();
+			return;
+		}
+		base.OnClosing(e);
 	}
 
 	/// <summary>

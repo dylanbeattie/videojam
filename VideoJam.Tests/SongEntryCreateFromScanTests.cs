@@ -113,18 +113,4 @@ public sealed class SongEntryCreateFromScanTests : IDisposable {
 		Assert.Equal(2, entry.Channels.Count);
 	}
 
-	// ── 7.7 DisplayRoutingOverrides is empty ──────────────────────────────────
-
-	[Fact]
-	public void CreateFromScan_DisplayRoutingOverrides_IsEmpty() {
-		// Arrange
-		SongManifest manifest = MakeManifest("Song", StemChannel("guitar.wav"));
-
-		// Act
-		SongEntry entry = SongEntry.CreateFromScan(manifest, tempDir.FullName);
-
-		// Assert
-		Assert.NotNull(entry.DisplayRoutingOverrides);
-		Assert.Empty(entry.DisplayRoutingOverrides);
-	}
 }

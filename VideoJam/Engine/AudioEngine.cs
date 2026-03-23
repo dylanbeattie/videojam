@@ -51,6 +51,7 @@ internal sealed class AudioEngine : IDisposable, IAudioPlayback {
 
 	private readonly ILogger<AudioEngine> logger;
 	private readonly List<IDisposable> readers = [];
+	private readonly Dictionary<string, VolumeSampleProvider> _volumeProviders = [];
 	private WasapiOut? wasapiOut;
 	private bool stoppedExplicitly;
 	private bool disposed;
@@ -115,12 +116,12 @@ internal sealed class AudioEngine : IDisposable, IAudioPlayback {
 			// Resample to the common mix format if needed.
 			var resampled = EnsureMixFormat(reader);
 
-			// Apply per-channel volume.
-			var level = channelSettings.TryGetValue(channel.ChannelId, out var settings)
-				? settings.Level
-				: DEFAULT_CHANNEL_LEVEL;
+			// Apply per-channel volume, accounting for mute state.
+			var settings = channelSettings.TryGetValue(channel.ChannelId, out var s) ? s : null;
+			var level = (settings?.Muted ?? false) ? 0f : (settings?.Level ?? DEFAULT_CHANNEL_LEVEL);
 
 			var volumeProvider = new VolumeSampleProvider(resampled) { Volume = level };
+			_volumeProviders[channel.ChannelId] = volumeProvider;
 			sampleProviders.Add(volumeProvider);
 		}
 
@@ -171,6 +172,21 @@ internal sealed class AudioEngine : IDisposable, IAudioPlayback {
 		foreach (var reader in readers)
 			reader.Dispose();
 		readers.Clear();
+		_volumeProviders.Clear();
+	}
+
+	/// <summary>
+	/// Re-applies volume levels from the supplied channel settings to the active pipeline.
+	/// Called immediately before playback starts so that any level/mute changes made
+	/// after <see cref="Load"/> are picked up.
+	/// </summary>
+	/// <param name="channelSettings">Per-channel settings keyed by channel ID.</param>
+	public void ApplyChannelSettings(IReadOnlyDictionary<string, ChannelSettings> channelSettings) {
+		ObjectDisposedException.ThrowIf(disposed, this);
+		foreach (var (channelId, provider) in _volumeProviders) {
+			var settings = channelSettings.TryGetValue(channelId, out var s) ? s : null;
+			provider.Volume = (settings?.Muted ?? false) ? 0f : (settings?.Level ?? DEFAULT_CHANNEL_LEVEL);
+		}
 	}
 
 	/// <inheritdoc />

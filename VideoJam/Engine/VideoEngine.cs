@@ -70,7 +70,7 @@ internal sealed class VideoEngine : IDisposable, IVideoPlayback {
 	// ── Public API ────────────────────────────────────────────────────────────
 
 	/// <summary>
-	/// Loads the video file for <paramref name="displayIndex"/> from <paramref name="manifest"/>
+	/// Loads the video file for <paramref name="slotIndex"/> from <paramref name="manifest"/>
 	/// onto <paramref name="window"/>, pre-buffering it so <see cref="Play"/> can start instantly.
 	/// </summary>
 	/// <remarks>
@@ -90,35 +90,35 @@ internal sealed class VideoEngine : IDisposable, IVideoPlayback {
 	/// fallback image for this song.
 	/// </para>
 	/// <para>
-	/// If no video file in <paramref name="manifest"/> targets <paramref name="displayIndex"/>,
+	/// If no video file in <paramref name="manifest"/> targets <paramref name="slotIndex"/>,
 	/// the method returns immediately without modifying the window state.
 	/// </para>
 	/// </remarks>
 	/// <param name="manifest">The song manifest produced by <c>SongScanner</c>.</param>
-	/// <param name="displayIndex">The display index to target (0 = primary display).</param>
-	/// <param name="window">The <see cref="VlcDisplayWindow"/> associated with this display.</param>
+	/// <param name="slotIndex">The slot index to target (0 = first slot).</param>
+	/// <param name="window">The <see cref="VlcDisplayWindow"/> associated with this slot.</param>
 	/// <param name="cancellationToken">Cancellation token for the async operation.</param>
 	public async Task Load(
 		SongManifest manifest,
-		int displayIndex,
+		int slotIndex,
 		VlcDisplayWindow window,
 		CancellationToken cancellationToken = default) {
 
 		ObjectDisposedException.ThrowIf(disposed, this);
 
 		var videoFile = manifest.VideoFiles
-			.FirstOrDefault(v => v.DisplayIndex == displayIndex);
+			.FirstOrDefault(v => v.SlotIndex == slotIndex);
 
 		if (videoFile is null) {
 			logger.LogDebug(
-				"No video file in manifest for display index {DisplayIndex}; window state unchanged.",
-				displayIndex);
+				"No video file in manifest for slot index {SlotIndex}; window state unchanged.",
+				slotIndex);
 			return;
 		}
 
 		logger.LogInformation(
-			"Loading video file {File} for display {DisplayIndex}.",
-			videoFile.File.Name, displayIndex);
+			"Loading video file {File} for slot {SlotIndex}.",
+			videoFile.File.Name, slotIndex);
 
 		var player = new MediaPlayer(libVlc);
 
@@ -157,17 +157,17 @@ internal sealed class VideoEngine : IDisposable, IVideoPlayback {
 			// Timed out (not cancelled by the caller) — abort this slot.
 			logger.LogWarning(
 				"Pre-buffer for {File} did not complete within {TimeoutMs} ms. " +
-				"Display {DisplayIndex} will show its fallback image during playback.",
-				videoFile.File.Name, PRE_BUFFER_TIMEOUT_MS, displayIndex);
+				"Slot {SlotIndex} will show its fallback image during playback.",
+				videoFile.File.Name, PRE_BUFFER_TIMEOUT_MS, slotIndex);
 			prebufferSucceeded = false;
 		}
 		catch (Exception ex) when (ex is not OperationCanceledException) {
 			// LibVLC raised an error (e.g. file not found, codec failure) — treat as a graceful
 			// pre-buffer failure so a single bad file does not abort the entire playback session.
 			logger.LogWarning(ex,
-				"Pre-buffer for {File} on display {DisplayIndex} failed with an exception. " +
-				"The display will show its fallback image during playback.",
-				videoFile.File.Name, displayIndex);
+				"Pre-buffer for {File} on slot {SlotIndex} failed with an exception. " +
+				"The slot will show its fallback image during playback.",
+				videoFile.File.Name, slotIndex);
 			prebufferSucceeded = false;
 		}
 		finally {
@@ -191,8 +191,8 @@ internal sealed class VideoEngine : IDisposable, IVideoPlayback {
 			slots.Add(new ActiveSlot(player, window));
 
 		logger.LogDebug(
-			"Video pre-buffer complete for {File} on display {DisplayIndex}.",
-			videoFile.File.Name, displayIndex);
+			"Video pre-buffer complete for {File} on slot {SlotIndex}.",
+			videoFile.File.Name, slotIndex);
 
 		// ── Local event handlers (VLC internal thread) ────────────────────────
 
@@ -226,7 +226,7 @@ internal sealed class VideoEngine : IDisposable, IVideoPlayback {
 	/// </remarks>
 	/// <param name="manifest">The song manifest produced by <c>SongScanner</c>.</param>
 	/// <param name="windows">
-	/// Map of display index → <see cref="VlcDisplayWindow"/>. One <see cref="Load"/> call
+	/// Map of slot index → <see cref="VlcDisplayWindow"/>. One <see cref="Load"/> call
 	/// is dispatched per entry.
 	/// </param>
 	/// <param name="cancellationToken">Cancellation token propagated to every <see cref="Load"/> call.</param>

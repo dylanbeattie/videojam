@@ -1,22 +1,63 @@
-### Requirement: VlcDisplayWindow covers one physical display
+### Requirement: VlcDisplayWindow is a freely positionable, resizable window
 
-A `VlcDisplayWindow` SHALL be a borderless, topmost WPF `Window` that fills exactly one physical display.
-- It SHALL have `WindowStyle="None"`, `ResizeMode="NoResize"`, and `Topmost="True"`.
-- It SHALL have a black `Background` so unrendered areas do not show system chrome.
-- Its position and size SHALL be set in device-independent units derived from the physical screen bounds divided by the monitor's DPI scale factor.
-- After the window is `Loaded`, it SHALL expose its Win32 HWND via `IntPtr Hwnd`.
+A `VlcDisplayWindow` SHALL be a WPF `Window` with:
+- `WindowStyle="SingleBorderWindow"` — standard title bar and border
+- `ResizeMode="CanResize"` — freely resizable by the operator
+- No `Topmost` property (default `false`) — must not obscure the operator UI
 
-#### Scenario: Window covers primary display at 100% DPI
-- **WHEN** a `VlcDisplayWindow` is positioned and shown for the primary display at 100% DPI
-- **THEN** the window covers the full screen with no visible taskbar, borders, or chrome
+It SHALL have a black `Background` so unrendered areas do not show system chrome.
 
-#### Scenario: Window covers primary display at 150% DPI
-- **WHEN** a `VlcDisplayWindow` is positioned and shown for the primary display at 150% DPI (HiDPI)
-- **THEN** the window covers the full physical screen without undershooting or overshooting
+After the window is `Loaded`, it SHALL expose its Win32 HWND via `nint Hwnd`.
+
+The window is keyed by `int SlotIndex` (zero-based). The title bar SHALL read `"VideoJam — Video {SlotIndex + 1}"`, set via `UpdateTitle()`.
 
 #### Scenario: HWND is available after Loaded
 - **WHEN** the `VlcDisplayWindow.Loaded` event has fired
 - **THEN** `VlcDisplayWindow.Hwnd` is a non-zero, valid Win32 window handle
+
+#### Scenario: Window title reflects slot index
+- **WHEN** `SlotIndex` is set to `1` and `UpdateTitle()` is called
+- **THEN** the window title is `"VideoJam — Video 2"`
+
+---
+
+### Requirement: VlcDisplayWindow close button hides rather than destroys
+
+Clicking the window's close button (or pressing Alt+F4) SHALL hide the window rather than destroy it. The window SHALL be reused by `PlaybackEngine.EnsureVideoWindows()` on the next cue.
+
+`ForceClose()` SHALL bypass this guard and close the window permanently. It is called only during application shutdown.
+
+#### Scenario: Close button hides the window
+- **WHEN** the operator clicks the close button on a `VlcDisplayWindow`
+- **THEN** the window is hidden (`Visibility.Hidden`) and is not destroyed; the `Hwnd` remains valid
+
+#### Scenario: ForceClose destroys the window
+- **WHEN** `ForceClose()` is called
+- **THEN** the window is closed and destroyed
+
+---
+
+### Requirement: VlcDisplayWindow supports layout capture and restore
+
+`GetLayout()` SHALL return a `VideoWindowLayout` record capturing the window's current position, size, and maximised state. If the window is maximised, `RestoreBounds` SHALL be used so the non-maximised position is preserved.
+
+`ApplyLayout(VideoWindowLayout layout)` SHALL restore a previously captured layout: set `Left`, `Top`, `Width`, `Height`, and if `layout.IsMaximised` is `true`, set `WindowState = Maximized`.
+
+#### Scenario: GetLayout captures non-maximised bounds
+- **WHEN** the window is at a known position and size and `GetLayout()` is called
+- **THEN** the returned `VideoWindowLayout` has matching `Left`, `Top`, `Width`, `Height`, and `IsMaximised == false`
+
+#### Scenario: GetLayout uses RestoreBounds when maximised
+- **WHEN** the window is maximised and `GetLayout()` is called
+- **THEN** `Left`, `Top`, `Width`, `Height` reflect the pre-maximised restore bounds, not the maximised screen dimensions
+
+#### Scenario: ApplyLayout restores position and size
+- **WHEN** `ApplyLayout(layout)` is called with a saved layout
+- **THEN** `Left`, `Top`, `Width`, `Height` match the saved values
+
+#### Scenario: ApplyLayout maximises the window when saved as maximised
+- **WHEN** `ApplyLayout(layout)` is called with `layout.IsMaximised == true`
+- **THEN** `WindowState` is set to `Maximized`
 
 ---
 
@@ -24,7 +65,7 @@ A `VlcDisplayWindow` SHALL be a borderless, topmost WPF `Window` that fills exac
 
 A `VlcDisplayWindow` SHALL support two display states: **Fallback** (showing a static PNG) and **Video** (showing the LibVLC render surface).
 
-- `ShowFallback(BitmapImage image)` SHALL set the fallback image and bring it to the foreground layer.
+- `ShowFallback(BitmapImage? image)` SHALL set the fallback image and bring it to the foreground layer. If `image` is `null`, the window displays solid black.
 - `ShowVideo()` SHALL hide the fallback image layer, making the VLC render surface the foreground.
 - The default state at window creation SHALL be Fallback with no image (solid black).
 
@@ -34,7 +75,7 @@ A `VlcDisplayWindow` SHALL support two display states: **Fallback** (showing a s
 
 #### Scenario: Video surface is shown
 - **WHEN** `ShowVideo()` is called
-- **THEN** the fallback `Image` element is hidden (not visible) and the VLC HWND surface is the foreground
+- **THEN** the fallback `Image` element is hidden and the VLC HWND surface is the foreground
 
 #### Scenario: Default state is solid black
 - **WHEN** a `VlcDisplayWindow` is shown without calling `ShowFallback()` or `ShowVideo()`
@@ -42,27 +83,34 @@ A `VlcDisplayWindow` SHALL support two display states: **Fallback** (showing a s
 
 ---
 
-### Requirement: VideoEngine loads a video file onto a display
+### Requirement: VideoEngine loads a video file for a slot
 
-`VideoEngine.Load(SongManifest manifest, int displayIndex, VlcDisplayWindow window)` SHALL:
-- Create a `MediaPlayer` for the video file matching `displayIndex` in `manifest.VideoFiles`.
+`VideoEngine.Load(SongManifest manifest, int slotIndex, VlcDisplayWindow window)` SHALL:
+- Find the `VideoFileManifest` in `manifest.VideoFiles` whose `SlotIndex` matches the `slotIndex` parameter.
+- Create a `MediaPlayer` for that video file.
 - Set `MediaPlayer.Hwnd` to `window.Hwnd` so LibVLC renders into that window.
 - Open the file with the VLC options `--no-audio` and `--no-osd`.
-- Execute the pre-buffer sequence: call `MediaPlayer.Play()`, wait for the `Paused` state event (timeout: 2 seconds), then seek to position 0.
+- Execute the pre-buffer sequence: call `MediaPlayer.Play()`, wait for the `Playing` state event (timeout: 2 seconds total), then call `MediaPlayer.SetPause(true)` from within the `Playing` event handler, then await the `Paused` state event, then seek to position 0.
 - Call `window.ShowVideo()` after the pre-buffer completes.
-- If no video file in the manifest targets `displayIndex`, leave the window in its current state.
+- If no video file in the manifest has the given `slotIndex`, leave the window in its current state.
+
+The `Playing` event MUST be used to gate the `SetPause(true)` call. Calling `SetPause(true)` before the `Playing` event fires is not permitted; VLC may be in `Opening` or `Buffering` state and will silently ignore the pause request.
 
 #### Scenario: Video file loads and pre-buffers successfully
 - **WHEN** `VideoEngine.Load()` is called with a valid MP4 file and a ready `VlcDisplayWindow`
-- **THEN** the `MediaPlayer` reaches the `Paused` state, is seeked to position 0, and the display shows the video surface
+- **THEN** the `MediaPlayer` fires `Playing`, then fires `Paused`, is seeked to position 0, and the display shows the video surface
 
-#### Scenario: No video for the given display index
-- **WHEN** `VideoEngine.Load()` is called and no video file in the manifest targets the given display index
+#### Scenario: No video for the given slot index
+- **WHEN** `VideoEngine.Load()` is called and no video file in the manifest has the given `slotIndex`
 - **THEN** `VideoEngine.Load()` returns without error and the `VlcDisplayWindow` remains in its previous state
 
 #### Scenario: Pre-buffer times out
-- **WHEN** the `Paused` state event is not received within 2 seconds
-- **THEN** `VideoEngine.Load()` logs a warning and returns, leaving the display in an indeterminate state (GO may still be pressed at operator risk)
+- **WHEN** neither the `Playing` event nor the subsequent `Paused` event is received within 2 seconds total
+- **THEN** `VideoEngine.Load()` logs a warning and returns, leaving the display in fallback state (GO may still be pressed; that display will show fallback for the song)
+
+#### Scenario: Two slots pre-buffer concurrently without race
+- **WHEN** `LoadAll` is called with two video files (e.g. slot 0 and slot 1) and both `Load()` calls run concurrently
+- **THEN** both slots successfully pre-buffer regardless of which file VLC opens faster, because each `SetPause(true)` is gated on its own `Playing` event
 
 ---
 
@@ -78,7 +126,7 @@ A `VlcDisplayWindow` SHALL support two display states: **Fallback** (showing a s
 
 #### Scenario: Elapsed time is logged
 - **WHEN** `VideoEngine.Play(timestamp)` completes
-- **THEN** the time elapsed since `audioStartTimestamp` is recorded in the log at `Debug` level by `SyncCoordinator` (which captures the post-`video.Play()` timestamp and emits the single authoritative Δt entry — `VideoEngine.Play()` itself logs only the MediaPlayer dispatch count)
+- **THEN** the time elapsed since `audioStartTimestamp` is recorded in the log at `Debug` level by `SyncCoordinator`
 
 ---
 
@@ -87,7 +135,7 @@ A `VlcDisplayWindow` SHALL support two display states: **Fallback** (showing a s
 `VideoEngine.Stop()` SHALL:
 - Call `MediaPlayer.Stop()` on all active MediaPlayers.
 - Dispose all active `MediaPlayer` instances.
-- Call `window.ShowFallback(currentFallbackImage)` for every managed `VlcDisplayWindow` (or `ShowFallback` with null / solid black if no fallback was set).
+- Call `window.ShowFallback(currentFallbackImage)` for every managed `VlcDisplayWindow` (or `ShowFallback(null)` / solid black if no fallback was set).
 - Reset internal state so `Load()` can be called again for the next song.
 
 #### Scenario: Stop clears active MediaPlayers
@@ -127,19 +175,19 @@ The shared `LibVLC` instance SHALL be constructed with `"--no-audio"` in its opt
 
 ---
 
-### Requirement: VideoEngine loads all display slots concurrently
+### Requirement: VideoEngine loads all slots concurrently
 
-`VideoEngine.LoadAll(SongManifest manifest, IReadOnlyDictionary<int, VlcDisplayWindow> windows, CancellationToken cancellationToken)` SHALL call `Load()` concurrently for every `(displayIndex, window)` pair in `windows` and await all calls via `Task.WhenAll`. Each `Load()` call receives the full `manifest`, the pair's display index, and the pair's window.
+`VideoEngine.LoadAll(SongManifest manifest, IReadOnlyDictionary<int, VlcDisplayWindow> windows, CancellationToken cancellationToken)` SHALL call `Load()` concurrently for every `(slotIndex, window)` pair in `windows` and await all calls via `Task.WhenAll`.
 
-If a `Load()` call times out during pre-buffering, it returns without adding a slot (per the existing pre-buffer timeout requirement) — `LoadAll()` SHALL still complete normally. If a `Load()` call throws an unhandled exception, `LoadAll()` SHALL propagate it to the caller.
+If a `Load()` call times out during pre-buffering, it returns without adding a slot — `LoadAll()` SHALL still complete normally. If a `Load()` call throws an unhandled exception, `LoadAll()` SHALL propagate it to the caller.
 
-#### Scenario: Two displays load concurrently
-- **WHEN** `LoadAll` is called with a manifest containing video files for display indices 0 and 1, and `windows` contains entries for both indices
+#### Scenario: Two slots load concurrently
+- **WHEN** `LoadAll` is called with a manifest containing video files for slot indices 0 and 1, and `windows` contains entries for both
 - **THEN** both `Load()` calls are dispatched concurrently and `LoadAll` completes after both have finished pre-buffering
 
-#### Scenario: Pre-buffer timeout on one display does not prevent the other from loading
-- **WHEN** `LoadAll` is called for two displays and the pre-buffer for display 1 times out
-- **THEN** `LoadAll` completes normally, display 0 is in its pre-buffered state, and display 1 remains in fallback state
+#### Scenario: Pre-buffer timeout on one slot does not prevent the other from loading
+- **WHEN** `LoadAll` is called for two slots and the pre-buffer for slot 1 times out
+- **THEN** `LoadAll` completes normally, slot 0 is in its pre-buffered state, and slot 1 remains in fallback state
 
 #### Scenario: Empty windows dictionary completes immediately
 - **WHEN** `LoadAll` is called with an empty `windows` dictionary

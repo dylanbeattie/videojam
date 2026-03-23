@@ -17,12 +17,6 @@ public sealed class SongEntry {
 	public string Name { get; set; } = string.Empty;
 
 	/// <summary>
-	/// Per-song overrides for display routing, keyed by video filename suffix.
-	/// Takes precedence over <see cref="Show.GlobalDisplayRouting"/>.
-	/// </summary>
-	public Dictionary<string, int> DisplayRoutingOverrides { get; set; } = [];
-
-	/// <summary>
 	/// Per-channel settings keyed by channel ID (e.g. <c>"drums.wav"</c> or <c>"video.mp4:audio"</c>).
 	/// </summary>
 	public Dictionary<string, ChannelSettings> Channels { get; set; } = [];
@@ -41,7 +35,6 @@ public sealed class SongEntry {
 	///   <item><see cref="FolderPath"/> — relative path from <paramref name="showFileDirectory"/> to the song folder</item>
 	///   <item><see cref="Name"/> — the folder's leaf name</item>
 	///   <item><see cref="Channels"/> — one entry per audio channel, with type-appropriate defaults</item>
-	///   <item><see cref="DisplayRoutingOverrides"/> — empty</item>
 	/// </list>
 	/// </returns>
 	public static SongEntry CreateFromScan(SongManifest manifest, string showFileDirectory) {
@@ -57,7 +50,6 @@ public sealed class SongEntry {
 			FolderPath = PathResolver.MakeRelative(manifest.Folder.FullName, showFileDirectory),
 			Name = manifest.Folder.Name,
 			Channels = channels,
-			DisplayRoutingOverrides = [],
 		};
 	}
 }

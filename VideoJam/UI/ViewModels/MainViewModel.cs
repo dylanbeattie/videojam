@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using VideoJam.Engine;
+using VideoJam.Input;
 using VideoJam.Model;
 using VideoJam.Services;
 
@@ -8,14 +10,16 @@ namespace VideoJam.UI.ViewModels;
 
 /// <summary>
 /// Root ViewModel for <see cref="MainWindow"/>.
-/// Owns all operator-facing UI state and the show file operations.
-/// No engine calls are made in Phase 5 — playback wiring is deferred to Phase 6.
+/// Owns all operator-facing UI state, show file operations, and playback control.
 /// </summary>
-public sealed class MainViewModel : INotifyPropertyChanged {
+internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable {
 	// ── Dependencies ──────────────────────────────────────────────────────────
 
 	private readonly ShowFileService _showFileService = new();
 	private readonly IDialogService _dialogService;
+	private readonly PlaybackEngine? _playbackEngine;
+	private readonly HotkeyService? _hotkeyService;
+	private HotkeyService? _subscribedHotkeyService;
 
 	// ── Backing fields ────────────────────────────────────────────────────────
 
@@ -23,9 +27,11 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 	private SongEntry? _selectedSong;
 	private SongRowViewModel? _selectedSongRow;
 	private PlaybackState _playbackState = PlaybackState.Idle;
+	private bool _isLoading;
 	private bool _hasUnsavedChanges;
 	private string _statusText = StatusReady;
 	private string? _showFilePath;
+	private bool _disposed;
 
 	// ── Status constants ──────────────────────────────────────────────────────
 
@@ -39,13 +45,18 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 	/// Initialises a new <see cref="MainViewModel"/>.
 	/// </summary>
 	/// <param name="dialogService">Dialog abstraction used for all user-facing prompts.</param>
-	public MainViewModel(IDialogService dialogService) {
+	/// <param name="playbackEngine">Playback engine; <see langword="null"/> until Phase 6 wiring is complete.</param>
+	/// <param name="hotkeyService">Hotkey service; <see langword="null"/> until Phase 6 wiring is complete.</param>
+	public MainViewModel(
+		IDialogService dialogService,
+		PlaybackEngine? playbackEngine = null,
+		HotkeyService? hotkeyService = null) {
 		_dialogService = dialogService;
+		_playbackEngine = playbackEngine;
+		_hotkeyService = hotkeyService;
 
 		SongRows = [];
 		SelectedChannels = [];
-		GlobalRoutingEntries = [];
-		FallbackImageEntries = [];
 
 		AddSongCommand = new RelayCommand(ExecuteAddSong, CanAddSong);
 		RemoveSongCommand = new RelayCommand<SongRowViewModel>(ExecuteRemoveSong, r => r is not null);
@@ -56,12 +67,20 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 		SaveShowCommand = new RelayCommand(ExecuteSaveShow, () => _loadedShow is not null);
 		SaveAsShowCommand = new RelayCommand(ExecuteSaveAsShow, () => _loadedShow is not null);
 
-		AddRoutingEntryCommand = new RelayCommand(ExecuteAddRoutingEntry, () => _loadedShow is not null);
-		RemoveRoutingEntryCommand = new RelayCommand<DisplayRoutingEntryViewModel>(ExecuteRemoveRoutingEntry);
+		BrowseFallbackImageCommand = new RelayCommand(ExecuteBrowseFallbackImage);
 
-		BrowseFallbackImageCommand = new RelayCommand<FallbackImageEntryViewModel>(ExecuteBrowseFallbackImage);
+		GoCommand = new RelayCommand(ExecuteGo, CanGo);
+		StopAndRewindCommand = new RelayCommand(ExecuteStopAndRewind, CanStopAndRewind);
+		CueSongCommand = new RelayCommand<SongRowViewModel>(ExecuteCueSong, CanCueSong);
 
-		RefreshFallbackDisplayEntries();
+		if (_playbackEngine is not null)
+			_playbackEngine.StateChanged += OnPlaybackStateChanged;
+
+		if (_hotkeyService is not null) {
+			_hotkeyService.ButtonAPressed += OnButtonAPressed;
+			_hotkeyService.ButtonBPressed += OnButtonBPressed;
+			_subscribedHotkeyService = _hotkeyService;
+		}
 	}
 
 	// ── Properties ────────────────────────────────────────────────────────────
@@ -75,12 +94,6 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 
 	/// <summary>Per-channel mixer rows for the currently selected song.</summary>
 	public ObservableCollection<ChannelSettingsViewModel> SelectedChannels { get; }
-
-	/// <summary>Global display routing entries for the routing table UI.</summary>
-	public ObservableCollection<DisplayRoutingEntryViewModel> GlobalRoutingEntries { get; }
-
-	/// <summary>Per-display fallback image assignment entries.</summary>
-	public ObservableCollection<FallbackImageEntryViewModel> FallbackImageEntries { get; }
 
 	/// <summary>The currently loaded show, or <see langword="null"/> when no show is open.</summary>
 	public Show? LoadedShow {
@@ -129,7 +142,7 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 		}
 	}
 
-	/// <summary>Current playback state. Defaults to <see cref="PlaybackState.Idle"/> in Phase 5.</summary>
+	/// <summary>Current playback state. Updated via <see cref="OnPlaybackStateChanged"/>.</summary>
 	public PlaybackState PlaybackState {
 		get => _playbackState;
 		private set {
@@ -138,6 +151,19 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 			OnPropertyChanged();
 			OnPropertyChanged(nameof(IsMixerEnabled));
 			OnPropertyChanged(nameof(IsSetlistInteractive));
+		}
+	}
+
+	/// <summary>
+	/// <see langword="true"/> while a <see cref="PlaybackEngine.Cue"/> operation is in progress.
+	/// </summary>
+	public bool IsLoading {
+		get => _isLoading;
+		private set {
+			if (_isLoading == value) return;
+			_isLoading = value;
+			OnPropertyChanged();
+			UpdateStatus();
 		}
 	}
 
@@ -163,6 +189,17 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 			_hasUnsavedChanges = value;
 			OnPropertyChanged();
 			OnPropertyChanged(nameof(WindowTitle));
+		}
+	}
+
+	/// <summary>
+	/// Display-friendly filename for the show's fallback image, or <c>"(none)"</c> when not set.
+	/// Bound to the fallback image label in the UI.
+	/// </summary>
+	public string FallbackImageDisplay {
+		get {
+			var path = _loadedShow?.FallbackImagePath;
+			return string.IsNullOrEmpty(path) ? "(none)" : Path.GetFileName(path);
 		}
 	}
 
@@ -216,14 +253,27 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 	/// <summary>Saves the current show to a new path chosen by the operator.</summary>
 	public RelayCommand SaveAsShowCommand { get; }
 
-	/// <summary>Appends a blank entry to the global display routing table.</summary>
-	public RelayCommand AddRoutingEntryCommand { get; }
+	/// <summary>Opens a PNG file picker to set the show's fallback image.</summary>
+	public RelayCommand BrowseFallbackImageCommand { get; }
 
-	/// <summary>Removes a display routing entry. Parameter: the entry ViewModel to remove.</summary>
-	public RelayCommand<DisplayRoutingEntryViewModel> RemoveRoutingEntryCommand { get; }
+	/// <summary>
+	/// Starts playback of the cued song.
+	/// Disabled when <see cref="PlaybackState"/> is not <see cref="PlaybackState.Cued"/>
+	/// or while a cue operation is in progress.
+	/// </summary>
+	public RelayCommand GoCommand { get; }
 
-	/// <summary>Opens a PNG file picker for a fallback image entry. Parameter: the entry ViewModel.</summary>
-	public RelayCommand<FallbackImageEntryViewModel> BrowseFallbackImageCommand { get; }
+	/// <summary>
+	/// Stops/rewinds playback (two-phase: Playing → Paused → Cued).
+	/// Disabled when <see cref="PlaybackState"/> is not Playing or Paused.
+	/// </summary>
+	public RelayCommand StopAndRewindCommand { get; }
+
+	/// <summary>
+	/// Cues the song corresponding to the clicked setlist row.
+	/// Disabled during <see cref="PlaybackState.Playing"/> and <see cref="PlaybackState.Paused"/>.
+	/// </summary>
+	public RelayCommand<SongRowViewModel> CueSongCommand { get; }
 
 	// ── Public helpers ────────────────────────────────────────────────────────
 
@@ -245,6 +295,113 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 			if (_hasUnsavedChanges) return true;  // Save failed or was itself cancelled → abort close
 		}
 		return false;  // No → allow the window to close without saving
+	}
+
+	/// <summary>
+	/// Injects the <see cref="HotkeyService"/> after construction.
+	/// Called from <c>App.xaml.cs</c> after the service is created on the UI thread.
+	/// </summary>
+	/// <param name="hotkeyService">The hotkey service to subscribe to.</param>
+	public void SetHotkeyService(HotkeyService hotkeyService) {
+		// Detach the previously subscribed service if any.
+		if (_subscribedHotkeyService is not null) {
+			_subscribedHotkeyService.ButtonAPressed -= OnButtonAPressed;
+			_subscribedHotkeyService.ButtonBPressed -= OnButtonBPressed;
+		}
+
+		_subscribedHotkeyService = hotkeyService;
+		hotkeyService.ButtonAPressed += OnButtonAPressed;
+		hotkeyService.ButtonBPressed += OnButtonBPressed;
+	}
+
+	/// <inheritdoc />
+	public void Dispose() {
+		if (_disposed) return;
+		_disposed = true;
+
+		if (_playbackEngine is not null)
+			_playbackEngine.StateChanged -= OnPlaybackStateChanged;
+
+		if (_subscribedHotkeyService is not null) {
+			_subscribedHotkeyService.ButtonAPressed -= OnButtonAPressed;
+			_subscribedHotkeyService.ButtonBPressed -= OnButtonBPressed;
+		}
+	}
+
+	// ── Playback command implementations ─────────────────────────────────────
+
+	private bool CanGo() => _playbackState == PlaybackState.Cued && !_isLoading;
+
+	private void ExecuteGo() {
+		_playbackEngine?.Go();
+	}
+
+	private bool CanStopAndRewind() =>
+		_playbackState is PlaybackState.Playing or PlaybackState.Paused;
+
+	private void ExecuteStopAndRewind() {
+		_playbackEngine?.StopAndRewind();
+	}
+
+	private bool CanCueSong(SongRowViewModel? row) =>
+		row is not null &&
+		_loadedShow is not null &&
+		_playbackState is not PlaybackState.Playing and not PlaybackState.Paused;
+
+	private void ExecuteCueSong(SongRowViewModel? row) {
+		if (row is null || _playbackEngine is null || _loadedShow is null) return;
+
+		var index = _loadedShow.Songs.IndexOf(row.Song);
+		if (index < 0) return;
+
+		IsLoading = true;
+		_ = _playbackEngine.Cue(index).ContinueWith(
+			_ => { IsLoading = false; UpdateStatus(); },
+			System.Threading.Tasks.TaskScheduler.FromCurrentSynchronizationContext());
+	}
+
+	// ── Hotkey handlers ───────────────────────────────────────────────────────
+
+	private void OnButtonAPressed(object? sender, EventArgs e) {
+		if (GoCommand.CanExecute(null))
+			GoCommand.Execute(null);
+	}
+
+	private void OnButtonBPressed(object? sender, EventArgs e) {
+		if (StopAndRewindCommand.CanExecute(null))
+			StopAndRewindCommand.Execute(null);
+	}
+
+	// ── PlaybackEngine event handler ──────────────────────────────────────────
+
+	private void OnPlaybackStateChanged(object? sender, EventArgs e) {
+		if (_playbackEngine is null) return;
+
+		PlaybackState = _playbackEngine.State;
+
+		// Sync SelectedSong to match the cued song index.
+		var cuedIndex = _playbackEngine.CuedSongIndex;
+		if (cuedIndex >= 0 && cuedIndex < (_loadedShow?.Songs.Count ?? 0)) {
+			var song = _loadedShow!.Songs[cuedIndex];
+			// Update backing fields directly to avoid double PropertyChanged chain.
+			_selectedSong = song;
+			_selectedSongRow = SongRows.FirstOrDefault(r => r.Song == song);
+			OnPropertyChanged(nameof(SelectedSong));
+			OnPropertyChanged(nameof(SelectedSongRow));
+			RebuildSelectedChannels();
+		} else if (_playbackEngine.State == PlaybackState.Idle) {
+			_selectedSong = null;
+			_selectedSongRow = null;
+			OnPropertyChanged(nameof(SelectedSong));
+			OnPropertyChanged(nameof(SelectedSongRow));
+			RebuildSelectedChannels();
+		}
+
+		// IsLoading: false once we reach Cued or Idle (Cue has completed).
+		if (_playbackEngine.State is PlaybackState.Cued or PlaybackState.Idle)
+			IsLoading = false;
+
+		UpdateStatus();
 	}
 
 	// ── Command implementations ───────────────────────────────────────────────
@@ -284,7 +441,6 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 			FolderPath = folderPath,
 			Name = Path.GetFileName(folderPath),
 			Channels = channels,
-			DisplayRoutingOverrides = [],
 		};
 
 		_loadedShow!.Songs.Add(entry);
@@ -366,8 +522,14 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 	}
 
 	private void SaveTo(string path) {
-		// Sync in-memory routing changes back to the Show model before serialising.
-		SyncRoutingToModel();
+		// Capture video window layouts so the operator's window arrangement is persisted.
+		if (_playbackEngine is not null) {
+			_loadedShow!.VideoWindowLayouts.Clear();
+			foreach (var (slotIndex, window) in _playbackEngine.VideoWindows) {
+				_loadedShow.VideoWindowLayouts[slotIndex] =
+					window.Dispatcher.Invoke(() => window.GetLayout());
+			}
+		}
 
 		try {
 			_showFileService.Save(_loadedShow!, path);
@@ -383,33 +545,18 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 		OnPropertyChanged(nameof(WindowTitle));
 	}
 
-	private void ExecuteAddRoutingEntry() {
+	private void ExecuteBrowseFallbackImage() {
 		if (_loadedShow is null) return;
-		// S1: Use only the constructor callback for dirty tracking — do NOT also subscribe to
-		// PropertyChanged, as that would fire MarkDirty() twice per property change.
-		var entry = new DisplayRoutingEntryViewModel(string.Empty, 0, MarkDirty);
-		GlobalRoutingEntries.Add(entry);
-		// Actual dictionary update happens in SyncRoutingToModel() at save time.
-		MarkDirty();
-	}
-
-	private void ExecuteRemoveRoutingEntry(DisplayRoutingEntryViewModel? entry) {
-		if (entry is null) return;
-		GlobalRoutingEntries.Remove(entry);
-		_loadedShow?.GlobalDisplayRouting.Remove(entry.Suffix);
-		MarkDirty();
-	}
-
-	private void ExecuteBrowseFallbackImage(FallbackImageEntryViewModel? entry) {
-		if (entry is null) return;
 		var path = _dialogService.PickOpenFile(
-			$"Select fallback image for Display {entry.DisplayIndex}",
+			"Select fallback image",
 			"PNG images|*.png|All files|*.*");
 		if (path is null) return;
-		// S1: entry.ImagePath setter calls the MarkDirty callback — no need to call it again.
-		entry.ImagePath = path;
-		if (_loadedShow is not null)
-			_loadedShow.FallbackImages[entry.DisplayIndex] = path;
+		// Store path relative to the show file when a save path is known, otherwise absolute.
+		_loadedShow.FallbackImagePath = _showFilePath is not null
+			? PathResolver.MakeRelative(path, Path.GetDirectoryName(_showFilePath)!)
+			: path;
+		OnPropertyChanged(nameof(FallbackImageDisplay));
+		MarkDirty();
 	}
 
 	// ── Unsaved-changes guard ─────────────────────────────────────────────────
@@ -444,6 +591,8 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 
 	private void ApplyShow(Show show, string? showFilePath) {
 		_showFilePath = showFilePath;
+		// Notify the PlaybackEngine about the new show before updating UI state.
+		_playbackEngine?.UpdateShow(show);
 		LoadedShow = show;
 
 		SongRows.Clear();
@@ -452,21 +601,14 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 
 		SelectedSong = null;
 
-		GlobalRoutingEntries.Clear();
-		foreach (var kvp in show.GlobalDisplayRouting) {
-			// S1: Use only the constructor callback for dirty tracking — no PropertyChanged subscription.
-			GlobalRoutingEntries.Add(new DisplayRoutingEntryViewModel(kvp.Key, kvp.Value, MarkDirty));
-		}
-
-		RefreshFallbackDisplayEntries();
-
+		OnPropertyChanged(nameof(FallbackImageDisplay));
 		HasUnsavedChanges = false;
 		OnPropertyChanged(nameof(WindowTitle));
 	}
 
 	/// <summary>
 	/// After loading a show from disk, converts relative <see cref="SongEntry.FolderPath"/>
-	/// and <see cref="Show.FallbackImages"/> values to absolute paths so the in-memory model
+	/// and <see cref="Show.FallbackImagePath"/> to absolute paths so the in-memory model
 	/// is always absolute and <see cref="ShowFileService"/> can safely re-relativize on save.
 	/// </summary>
 	private static void NormalizeLoadedPaths(Show show, string showDirectory) {
@@ -475,11 +617,8 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 				song.FolderPath = PathResolver.Resolve(song.FolderPath, showDirectory);
 		}
 
-		foreach (var key in show.FallbackImages.Keys.ToList()) {
-			var val = show.FallbackImages[key];
-			if (!string.IsNullOrEmpty(val) && !Path.IsPathRooted(val))
-				show.FallbackImages[key] = PathResolver.Resolve(val, showDirectory);
-		}
+		if (!string.IsNullOrEmpty(show.FallbackImagePath) && !Path.IsPathRooted(show.FallbackImagePath))
+			show.FallbackImagePath = PathResolver.Resolve(show.FallbackImagePath, showDirectory);
 	}
 
 	/// <summary>Rebuilds <see cref="SelectedChannels"/> from the newly selected song's channels.</summary>
@@ -489,36 +628,6 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 
 		foreach (var kvp in _selectedSong.Channels) {
 			SelectedChannels.Add(new ChannelSettingsViewModel(kvp.Key, kvp.Value, MarkDirty));
-		}
-	}
-
-	/// <summary>
-	/// Enumerates connected displays and rebuilds <see cref="FallbackImageEntries"/>.
-	/// Existing image assignments from <see cref="LoadedShow"/> are preserved.
-	/// </summary>
-	private void RefreshFallbackDisplayEntries() {
-		FallbackImageEntries.Clear();
-		var screens = System.Windows.Forms.Screen.AllScreens;
-		for (int i = 0; i < screens.Length; i++) {
-			var existingPath = _loadedShow?.FallbackImages.TryGetValue(i, out var p) == true ? p : null;
-			FallbackImageEntries.Add(new FallbackImageEntryViewModel(
-				i,
-				screens[i].DeviceName,
-				existingPath,
-				MarkDirty));
-		}
-	}
-
-	/// <summary>
-	/// Syncs the <see cref="GlobalRoutingEntries"/> observable collection back into
-	/// <see cref="Show.GlobalDisplayRouting"/> before serialisation.
-	/// </summary>
-	private void SyncRoutingToModel() {
-		if (_loadedShow is null) return;
-		_loadedShow.GlobalDisplayRouting.Clear();
-		foreach (var entry in GlobalRoutingEntries) {
-			if (!string.IsNullOrWhiteSpace(entry.Suffix))
-				_loadedShow.GlobalDisplayRouting[entry.Suffix] = entry.DisplayIndex;
 		}
 	}
 
@@ -536,10 +645,24 @@ public sealed class MainViewModel : INotifyPropertyChanged {
 	private void MarkDirty() => HasUnsavedChanges = true;
 
 	private void UpdateStatus() {
-		StatusText = (_loadedShow, _selectedSong) switch {
-			(null, _) => StatusReady,
-			(_, null) => StatusShowLoaded,
-			var (_, song) => $"Cued: {song!.Name}",
+		if (_loadedShow is null) {
+			StatusText = StatusReady;
+			return;
+		}
+
+		if (_selectedSong is null) {
+			StatusText = StatusShowLoaded;
+			return;
+		}
+
+		var songName = _selectedSong.Name;
+
+		StatusText = (_playbackState, _isLoading) switch {
+			(_, true)                                => $"Loading: {songName}\u2026",
+			(PlaybackState.Cued, _)                  => $"Cued: {songName} \u2014 press GO to start",
+			(PlaybackState.Playing, _)               => $"Playing: {songName}",
+			(PlaybackState.Paused, _)                => $"Paused: {songName} \u2014 press ESC to rewind",
+			_                                        => StatusShowLoaded,
 		};
 	}
 

@@ -130,37 +130,42 @@ public sealed class SongScannerTests : IDisposable {
 		Assert.Equal("drums.wav", result.AudioChannels[0].ChannelId);
 	}
 
-	// ── Display routing ───────────────────────────────────────────────────────
+	// ── Slot index assignment ─────────────────────────────────────────────────
 
 	[Fact]
-	public void Scan_WithRoutingAndMatchingSuffix_ResolvesDisplayIndexFromRouting() {
+	public void Scan_SingleMp4_GetsSlotIndexZero() {
 		CreateFile("show_lyrics.mp4");
-		var routing = new Dictionary<string, int> { ["_lyrics"] = 2 };
-
-		var result = SongScanner.Scan(tempDir, displayRouting: routing);
-
-		Assert.Single(result.VideoFiles);
-		Assert.Equal(2, result.VideoFiles[0].DisplayIndex);
-	}
-
-	[Fact]
-	public void Scan_WithRoutingButSuffixAbsent_FallsBackToPrimaryDisplayIndex() {
-		CreateFile("show_visuals.mp4");
-		var routing = new Dictionary<string, int> { ["_lyrics"] = 2 };
-
-		var result = SongScanner.Scan(tempDir, displayRouting: routing);
-
-		Assert.Single(result.VideoFiles);
-		Assert.Equal(VideoJam.Engine.DisplayManager.PRIMARY_DISPLAY_INDEX, result.VideoFiles[0].DisplayIndex);
-	}
-
-	[Fact]
-	public void Scan_WithNoRoutingArgument_FallsBackToPrimaryDisplayIndex() {
-		CreateFile("show_visuals.mp4");
 
 		var result = SongScanner.Scan(tempDir);
 
 		Assert.Single(result.VideoFiles);
-		Assert.Equal(VideoJam.Engine.DisplayManager.PRIMARY_DISPLAY_INDEX, result.VideoFiles[0].DisplayIndex);
+		Assert.Equal(0, result.VideoFiles[0].SlotIndex);
+	}
+
+	[Fact]
+	public void Scan_TwoMp4s_AssignedSequentialSlotIndicesInAlphabeticalOrder() {
+		CreateFile("show_visuals.mp4");
+		CreateFile("show_lyrics.mp4");
+
+		var result = SongScanner.Scan(tempDir);
+
+		Assert.Equal(2, result.VideoFiles.Count);
+		// Alphabetical order: show_lyrics.mp4 < show_visuals.mp4
+		var byName = result.VideoFiles.OrderBy(v => v.File.Name, StringComparer.OrdinalIgnoreCase).ToList();
+		Assert.Equal(0, byName[0].SlotIndex); // show_lyrics.mp4
+		Assert.Equal(1, byName[1].SlotIndex); // show_visuals.mp4
+	}
+
+	[Fact]
+	public void Scan_Mp4SlotIndices_AreCaseInsensitiveAlphabetical() {
+		CreateFile("ZETA.mp4");
+		CreateFile("alpha.mp4");
+
+		var result = SongScanner.Scan(tempDir);
+
+		Assert.Equal(2, result.VideoFiles.Count);
+		var sorted = result.VideoFiles.OrderBy(v => v.SlotIndex).ToList();
+		Assert.Equal("alpha.mp4", sorted[0].File.Name, StringComparer.OrdinalIgnoreCase);
+		Assert.Equal("ZETA.mp4", sorted[1].File.Name, StringComparer.OrdinalIgnoreCase);
 	}
 }

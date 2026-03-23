@@ -35,10 +35,13 @@ internal sealed class PlaybackEngine : IDisposable {
 	private readonly ILoggerFactory _loggerFactory;
 
 	/// <summary>
-	/// Display windows keyed by display index, created lazily on first cue and
+	/// Video windows keyed by slot index, created lazily on first cue and
 	/// reused across songs to avoid display flicker.
 	/// </summary>
-	private readonly Dictionary<int, VlcDisplayWindow> _displayWindows = [];
+	private readonly Dictionary<int, VlcDisplayWindow> _videoWindows = [];
+
+	/// <summary>The show's fallback image, loaded once when the show is applied.</summary>
+	private System.Windows.Media.Imaging.BitmapImage? _fallbackImage;
 
 	/// <summary>The current per-song audio engine; <see langword="null"/> until first cue.</summary>
 	private AudioEngine? _audioEngine;
@@ -55,7 +58,7 @@ internal sealed class PlaybackEngine : IDisposable {
 	/// <summary>
 	/// Initialises a new <see cref="PlaybackEngine"/>.
 	/// </summary>
-	/// <param name="show">The loaded show providing the setlist and global routing.</param>
+	/// <param name="show">The loaded show providing the setlist and configuration.</param>
 	/// <param name="videoEngine">The long-lived video engine.</param>
 	/// <param name="syncCoordinator">The A/V sync coordinator.</param>
 	/// <param name="mainWindow">The operator window — always visible; never hidden during playback. May be set later via <see cref="SetMainWindow"/>.</param>
@@ -71,6 +74,7 @@ internal sealed class PlaybackEngine : IDisposable {
 		_syncCoordinator = syncCoordinator;
 		_mainWindow = mainWindow!;
 		_loggerFactory = loggerFactory;
+		LoadFallbackImage();
 	}
 
 	// ── Public API ────────────────────────────────────────────────────────────
@@ -111,6 +115,7 @@ internal sealed class PlaybackEngine : IDisposable {
 		_videoEngine.Stop();
 		_cuedSongIndex = -1;
 		_show = show;
+		LoadFallbackImage();
 		SetState(PlaybackState.Idle);
 	}
 
@@ -141,11 +146,12 @@ internal sealed class PlaybackEngine : IDisposable {
 
 		// Subscribe before starting so we never miss the end event.
 		_audioEngine!.PlaybackEnded += OnPlaybackEnded;
+		_audioEngine!.ApplyChannelSettings(_show.Songs[_cuedSongIndex].Channels);
 
 		_syncCoordinator.Start(_audioEngine!, _videoEngine);
 
-		// Bring all display windows to the front so video is visible without hiding MainWindow.
-		foreach (var window in _displayWindows.Values)
+		// Bring all video windows to the front so video is visible without hiding MainWindow.
+		foreach (var window in _videoWindows.Values)
 			window.Dispatcher.Invoke(window.Activate);
 
 		SetState(PlaybackState.Playing);
@@ -179,6 +185,9 @@ internal sealed class PlaybackEngine : IDisposable {
 			// The displays remain in their current visual state because Stop() reverts to fallback.
 			// Per spec: "pause video players" — Stop is the mechanism available here.
 			_videoEngine.Stop();
+
+			foreach (var window in _videoWindows.Values)
+				window.Dispatcher.Invoke(() => window.ShowFallback(_fallbackImage));
 
 			SetState(PlaybackState.Paused);
 			return;
@@ -235,15 +244,12 @@ internal sealed class PlaybackEngine : IDisposable {
 			// FolderPath is absolute in memory (normalised on load per MainViewModel.NormalizeLoadedPaths).
 			var folder = new DirectoryInfo(song.FolderPath);
 
-			// Build merged routing: global + per-song overrides.
-			var routing = BuildRouting(song);
-
-			var manifest = SongScanner.Scan(folder, routing);
+			var manifest = SongScanner.Scan(folder);
 
 			linkedCt.ThrowIfCancellationRequested();
 
-			// Ensure display windows exist for every required display index.
-			EnsureDisplayWindows(manifest);
+			// Ensure video windows exist for every video file in the manifest.
+			EnsureVideoWindows(manifest);
 
 			// Load audio.
 			_audioEngine = new AudioEngine(_loggerFactory.CreateLogger<AudioEngine>());
@@ -252,7 +258,7 @@ internal sealed class PlaybackEngine : IDisposable {
 			linkedCt.ThrowIfCancellationRequested();
 
 			// Load all video concurrently.
-			await _videoEngine.LoadAll(manifest, _displayWindows, linkedCt).ConfigureAwait(true);
+			await _videoEngine.LoadAll(manifest, _videoWindows, linkedCt).ConfigureAwait(true);
 
 			linkedCt.ThrowIfCancellationRequested();
 
@@ -287,11 +293,19 @@ internal sealed class PlaybackEngine : IDisposable {
 
 		_videoEngine.Stop();
 
-		foreach (var window in _displayWindows.Values)
-			window.Dispatcher.Invoke(window.Close);
+		foreach (var window in _videoWindows.Values)
+			window.Dispatcher.Invoke(window.ForceClose);
 
-		_displayWindows.Clear();
+		_videoWindows.Clear();
 	}
+
+	// ── Public API (continued) ────────────────────────────────────────────────
+
+	/// <summary>
+	/// The current video windows keyed by slot index.
+	/// Used by the view model to capture window layouts before saving.
+	/// </summary>
+	public IReadOnlyDictionary<int, VlcDisplayWindow> VideoWindows => _videoWindows;
 
 	// ── Private helpers ───────────────────────────────────────────────────────
 
@@ -311,6 +325,9 @@ internal sealed class PlaybackEngine : IDisposable {
 
 		_videoEngine.Stop();
 
+		foreach (var window in _videoWindows.Values)
+			window.Dispatcher.Invoke(() => window.ShowFallback(_fallbackImage));
+
 		_mainWindow.Activate();
 
 		var nextIndex = _cuedSongIndex + 1;
@@ -324,27 +341,66 @@ internal sealed class PlaybackEngine : IDisposable {
 	}
 
 	/// <summary>
-	/// Builds the effective display routing for a song by merging global routing
-	/// with per-song overrides (per-song takes precedence).
+	/// Creates, shows, or hides <see cref="VlcDisplayWindow"/> instances so that one
+	/// visible window exists per video file in <paramref name="manifest"/>.
+	/// Windows are keyed by slot index and reused across songs to avoid flicker.
+	/// Excess windows from a previous song with more video files are hidden.
 	/// </summary>
-	private IReadOnlyDictionary<string, int> BuildRouting(SongEntry song) {
-		var merged = new Dictionary<string, int>(_show.GlobalDisplayRouting);
-		foreach (var kvp in song.DisplayRoutingOverrides)
-			merged[kvp.Key] = kvp.Value;
-		return merged;
+	private void EnsureVideoWindows(SongManifest manifest) {
+		var maxSlots = manifest.VideoFiles.Count;
+
+		// Create any missing windows.
+		for (var slotIndex = 0; slotIndex < maxSlots; slotIndex++) {
+			if (!_videoWindows.TryGetValue(slotIndex, out var window)) {
+				window = new VlcDisplayWindow { SlotIndex = slotIndex };
+				window.UpdateTitle();
+
+				if (_show.VideoWindowLayouts.TryGetValue(slotIndex, out var layout))
+					window.ApplyLayout(layout);
+				else {
+					// Default: staggered cascade from (100, 100), offset 30px each.
+					window.Left = 100 + slotIndex * 30;
+					window.Top = 100 + slotIndex * 30;
+					window.Width = 640;
+					window.Height = 360;
+				}
+
+				window.ShowFallback(_fallbackImage);
+				window.Show();
+				_videoWindows[slotIndex] = window;
+			} else if (!window.IsVisible) {
+				// Window was hidden (operator closed it); bring it back.
+				window.Show();
+			}
+		}
+
+		// Show fallback on excess windows (from a previous song with more video files).
+		foreach (var (slotIndex, window) in _videoWindows) {
+			if (slotIndex >= maxSlots) {
+				window.Dispatcher.Invoke(() => window.ShowFallback(_fallbackImage));
+			}
+		}
 	}
 
 	/// <summary>
-	/// Creates <see cref="VlcDisplayWindow"/> instances for any display indices in
-	/// <paramref name="manifest"/> that do not yet have a window.
+	/// Loads the show's fallback PNG image into memory.
+	/// Called when a show is loaded or updated.
 	/// </summary>
-	private void EnsureDisplayWindows(SongManifest manifest) {
-		var required = DisplayManager.GetRequiredDisplayIndices(manifest);
-		foreach (var displayIndex in required) {
-			if (!_displayWindows.ContainsKey(displayIndex)) {
-				var window = DisplayManager.CreateWindowForDisplay(displayIndex);
-				_displayWindows[displayIndex] = window;
-			}
+	private void LoadFallbackImage() {
+		_fallbackImage = null;
+		if (string.IsNullOrEmpty(_show.FallbackImagePath)) return;
+
+		try {
+			var image = new System.Windows.Media.Imaging.BitmapImage();
+			image.BeginInit();
+			image.UriSource = new Uri(_show.FallbackImagePath, UriKind.Absolute);
+			image.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+			image.EndInit();
+			image.Freeze();
+			_fallbackImage = image;
+		} catch (Exception ex) {
+			var logger = _loggerFactory.CreateLogger<PlaybackEngine>();
+			logger.LogWarning(ex, "Failed to load fallback image: {Path}", _show.FallbackImagePath);
 		}
 	}
 

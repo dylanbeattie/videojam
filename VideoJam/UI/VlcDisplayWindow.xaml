@@ -1,8 +1,8 @@
 <Window x:Class="VideoJam.UI.VlcDisplayWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        WindowStyle="None"
-        ResizeMode="NoResize"
+        WindowStyle="SingleBorderWindow"
+        ResizeMode="CanResize"
         Background="Black"
         Title="VideoJam Display"
         KeyDown="OnKeyDown">

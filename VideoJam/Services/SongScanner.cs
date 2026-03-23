@@ -1,4 +1,3 @@
-using VideoJam.Engine;
 using VideoJam.Model;
 
 namespace VideoJam.Services;
@@ -17,22 +16,18 @@ public static class SongScanner {
 	/// describing all recognised audio and video files.
 	/// </summary>
 	/// <param name="folder">The song directory to scan.</param>
-	/// <param name="displayRouting">
-	/// Optional mapping of filename suffix (e.g. <c>"_lyrics"</c>) to display index.
-	/// Each MP4 file's <see cref="VideoFileManifest.DisplayIndex"/> is resolved by looking up
-	/// its suffix in this dictionary. If the suffix is absent or <paramref name="displayRouting"/>
-	/// is <see langword="null"/>, the file is assigned to <see cref="DisplayManager.PRIMARY_DISPLAY_INDEX"/>.
-	/// </param>
 	/// <returns>
 	/// A manifest whose <see cref="SongManifest.SongName"/> is <c>folder.Name</c>
 	/// and whose <see cref="SongManifest.Folder"/> is the supplied <paramref name="folder"/>.
+	/// MP4 files are assigned <see cref="VideoFileManifest.SlotIndex"/> values of 0, 1, 2, …
+	/// in alphabetical order (case-insensitive) of their filenames.
 	/// Unrecognised files are silently ignored.
 	/// </returns>
-	public static SongManifest Scan(
-		DirectoryInfo folder,
-		IReadOnlyDictionary<string, int>? displayRouting = null) {
+	public static SongManifest Scan(DirectoryInfo folder) {
 		var audioChannels = new List<AudioChannelManifest>();
-		var videoFiles = new List<VideoFileManifest>();
+
+		// Collect MP4 files separately so they can be sorted before slot assignment.
+		var mp4Files = new List<FileInfo>();
 
 		foreach (var file in folder.EnumerateFiles()) {
 			var ext = file.Extension;
@@ -43,19 +38,28 @@ public static class SongScanner {
 					ChannelId: file.Name,
 					Type: AudioChannelType.Stem));
 			} else if (ext.Equals(".mp4", StringComparison.OrdinalIgnoreCase)) {
-				var suffix = ExtractSuffix(file.Name);
-
-				videoFiles.Add(new VideoFileManifest(
-					File: file,
-					DisplayIndex: DisplayManager.ResolveDisplayIndex(suffix, displayRouting ?? new Dictionary<string, int>()),
-					Suffix: suffix));
-
-				audioChannels.Add(new AudioChannelManifest(
-					File: file,
-					ChannelId: $"{file.Name}:audio",
-					Type: AudioChannelType.VideoAudio));
+				mp4Files.Add(file);
 			}
 			// All other extensions are silently ignored.
+		}
+
+		// Sort MP4s alphabetically (case-insensitive) and assign sequential slot indices.
+		mp4Files.Sort((a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.Name, b.Name));
+
+		var videoFiles = new List<VideoFileManifest>(mp4Files.Count);
+		for (int i = 0; i < mp4Files.Count; i++) {
+			var file = mp4Files[i];
+			var suffix = ExtractSuffix(file.Name);
+
+			videoFiles.Add(new VideoFileManifest(
+				File: file,
+				SlotIndex: i,
+				Suffix: suffix));
+
+			audioChannels.Add(new AudioChannelManifest(
+				File: file,
+				ChannelId: $"{file.Name}:audio",
+				Type: AudioChannelType.VideoAudio));
 		}
 
 		return new SongManifest(

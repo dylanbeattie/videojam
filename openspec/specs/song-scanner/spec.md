@@ -22,33 +22,31 @@
 ---
 
 ### Requirement: SongScanner classifies MP4 files as video + video audio
-`SongScanner.Scan` SHALL classify files with the `.mp4` extension (case-insensitive) as producing both a `VideoFileManifest` entry and an `AudioChannelManifest` with `Type = VideoAudio`. Both entries SHALL reference the file via a `FileInfo`. The `ChannelId` for the audio channel SHALL be `"{filename}:audio"`. The `VideoFileManifest.Suffix` SHALL be the underscore-prefixed portion of the filename before the extension (e.g. `opening_visuals_lyrics.mp4` → suffix `_lyrics`). If no underscore is present in the filename, `Suffix` SHALL be an empty string.
+`SongScanner.Scan` SHALL classify files with the `.mp4` extension (case-insensitive) as producing both a `VideoFileManifest` entry and an `AudioChannelManifest` with `Type = VideoAudio`. Both entries SHALL reference the file via a `FileInfo`. The `ChannelId` for the audio channel SHALL be `"{filename}:audio"`.
 
-`SongScanner.Scan` SHALL accept an optional second parameter `IReadOnlyDictionary<string, int>? displayRouting`. Each MP4 file's `VideoFileManifest.DisplayIndex` SHALL be resolved by calling `DisplayManager.ResolveDisplayIndex(suffix, displayRouting ?? empty)`. If `displayRouting` is `null` or omitted, all video files SHALL receive `DisplayManager.PrimaryDisplayIndex`.
+`SlotIndex` SHALL be assigned sequentially in ascending order based on case-insensitive alphabetical sort of the MP4 filenames. The first file alphabetically receives `SlotIndex = 0`, the second receives `SlotIndex = 1`, and so on.
 
-#### Scenario: MP4 with a suffix produces a VideoFileManifest and a VideoAudio channel
+There is no display routing parameter — the caller does not influence slot assignment. Slot indices are a stable, scanner-assigned identity for each video file.
+
+#### Scenario: Single MP4 receives SlotIndex 0
+- **WHEN** a folder contains one MP4 file
+- **THEN** its `VideoFileManifest` has `SlotIndex = 0`
+
+#### Scenario: Two MP4 files receive sequential slot indices in alphabetical order
+- **WHEN** a folder contains `audience.mp4` and `performer.mp4`
+- **THEN** `audience.mp4` gets `SlotIndex = 0` and `performer.mp4` gets `SlotIndex = 1` (alphabetical)
+
+#### Scenario: Slot index ordering is case-insensitive
+- **WHEN** a folder contains `Zebra.mp4` and `apple.mp4`
+- **THEN** `apple.mp4` gets `SlotIndex = 0` and `Zebra.mp4` gets `SlotIndex = 1`
+
+#### Scenario: MP4 produces a VideoFileManifest and a VideoAudio channel
 - **WHEN** a folder contains `show_visuals.mp4`
-- **THEN** the manifest contains a `VideoFileManifest` with `Suffix = "_visuals"` and an `AudioChannelManifest` with `ChannelId = "show_visuals.mp4:audio"` and `Type = VideoAudio`
-
-#### Scenario: MP4 with no underscore suffix has an empty Suffix
-- **WHEN** a folder contains `performance.mp4`
-- **THEN** the manifest contains a `VideoFileManifest` with `Suffix = ""`
+- **THEN** the manifest contains a `VideoFileManifest` with `SlotIndex = 0` and an `AudioChannelManifest` with `ChannelId = "show_visuals.mp4:audio"` and `Type = VideoAudio`
 
 #### Scenario: Multiple MP4 files each produce independent entries
 - **WHEN** a folder contains `track_lyrics.mp4` and `track_visuals.mp4`
-- **THEN** the manifest contains two `VideoFileManifest` entries with suffixes `_lyrics` and `_visuals` respectively, and two `AudioChannelManifest` entries of type `VideoAudio`
-
-#### Scenario: Display index resolved from routing when suffix matches
-- **WHEN** `Scan` is called with a folder containing `show_lyrics.mp4` and `displayRouting = {"_lyrics": 2}`
-- **THEN** the resulting `VideoFileManifest` has `DisplayIndex = 2`
-
-#### Scenario: Display index falls back to primary when suffix absent from routing
-- **WHEN** `Scan` is called with a folder containing `show_visuals.mp4` and `displayRouting = {"_lyrics": 2}`
-- **THEN** the resulting `VideoFileManifest` has `DisplayIndex = DisplayManager.PrimaryDisplayIndex`
-
-#### Scenario: Display index falls back to primary when no routing provided
-- **WHEN** `Scan` is called with a folder containing `show_visuals.mp4` and no `displayRouting` argument
-- **THEN** the resulting `VideoFileManifest` has `DisplayIndex = DisplayManager.PrimaryDisplayIndex`
+- **THEN** the manifest contains two `VideoFileManifest` entries with sequential slot indices, and two `AudioChannelManifest` entries of type `VideoAudio`
 
 ---
 

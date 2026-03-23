@@ -219,111 +219,23 @@
                            FontSize="11"
                            Margin="0,0,0,4" />
 
-                <!-- Display routing expander (docked to bottom) -->
-                <Expander DockPanel.Dock="Bottom"
-                          Header="Display Routing &amp; Fallback Images"
-                          Margin="0,6,0,0"
-                          IsExpanded="False">
-                    <ScrollViewer MaxHeight="250" VerticalScrollBarVisibility="Auto">
-                        <StackPanel Margin="4">
-
-                            <!-- Global routing table -->
-                            <TextBlock Text="Global Display Routing"
-                                       FontWeight="SemiBold"
-                                       Margin="0,0,0,4" />
-
-                            <ItemsControl ItemsSource="{Binding GlobalRoutingEntries}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid Margin="0,2">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="10" />
-                                                <ColumnDefinition Width="60" />
-                                                <ColumnDefinition Width="24" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBox Grid.Column="0"
-                                                     Text="{Binding Suffix, UpdateSourceTrigger=PropertyChanged}"
-                                                     ToolTip="Filename suffix (e.g. _lyrics)" />
-                                            <TextBlock Grid.Column="1"
-                                                       Text="→"
-                                                       VerticalAlignment="Center"
-                                                       HorizontalAlignment="Center" />
-                                            <TextBox Grid.Column="2"
-                                                     ToolTip="Display index (0 = primary)">
-                                                <TextBox.Text>
-                                                    <Binding Path="DisplayIndex"
-                                                             UpdateSourceTrigger="PropertyChanged">
-                                                        <Binding.ValidationRules>
-                                                            <ExceptionValidationRule />
-                                                        </Binding.ValidationRules>
-                                                    </Binding>
-                                                </TextBox.Text>
-                                            </TextBox>
-                                            <Button Grid.Column="3"
-                                                    Content="✕"
-                                                    FontSize="10"
-                                                    Width="20" Height="20"
-                                                    Margin="4,0,0,0"
-                                                    Padding="0"
-                                                    Background="Transparent"
-                                                    BorderThickness="0"
-                                                    Foreground="Gray"
-                                                    ToolTip="Remove routing entry"
-                                                    Command="{Binding DataContext.RemoveRoutingEntryCommand,
-                                                                      RelativeSource={RelativeSource AncestorType=Window}}"
-                                                    CommandParameter="{Binding}" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-
-                            <Button Content="+ Add Mapping"
-                                    Command="{Binding AddRoutingEntryCommand}"
-                                    HorizontalAlignment="Left"
-                                    Margin="0,4,0,8"
-                                    Height="24" />
-
-                            <!-- Fallback images -->
-                            <TextBlock Text="Fallback Images"
-                                       FontWeight="SemiBold"
-                                       Margin="0,4,0,4" />
-
-                            <ItemsControl ItemsSource="{Binding FallbackImageEntries}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid Margin="0,2">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="210" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="60" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0"
-                                                       Text="{Binding Label}"
-                                                       VerticalAlignment="Center"
-                                                       FontSize="11" />
-                                            <TextBlock Grid.Column="1"
-                                                       Text="{Binding ImagePath}"
-                                                       VerticalAlignment="Center"
-                                                       FontSize="11"
-                                                       Foreground="Gray"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       Margin="4,0" />
-                                            <Button Grid.Column="2"
-                                                    Content="Browse…"
-                                                    Height="22"
-                                                    FontSize="11"
-                                                    Command="{Binding DataContext.BrowseFallbackImageCommand,
-                                                                      RelativeSource={RelativeSource AncestorType=Window}}"
-                                                    CommandParameter="{Binding}" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-
-                        </StackPanel>
-                    </ScrollViewer>
-                </Expander>
+                <!-- Fallback image selector (docked to bottom) -->
+                <StackPanel DockPanel.Dock="Bottom"
+                            Orientation="Horizontal"
+                            Margin="0,8,0,0">
+                    <TextBlock Text="Fallback Image:"
+                               VerticalAlignment="Center"
+                               Margin="0,0,8,0" />
+                    <TextBlock Text="{Binding FallbackImageDisplay}"
+                               VerticalAlignment="Center"
+                               Margin="0,0,8,0"
+                               Foreground="Gray"
+                               TextTrimming="CharacterEllipsis"
+                               MaxWidth="200" />
+                    <Button Content="Browse…"
+                            Command="{Binding BrowseFallbackImageCommand}"
+                            Padding="8,2" />
+                </StackPanel>
 
                 <!-- Mixer panel — channel rows -->
                 <ScrollViewer VerticalScrollBarVisibility="Auto">

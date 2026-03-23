@@ -116,12 +116,14 @@ public sealed class MainViewModelTests : IDisposable {
 	}
 
 	[Fact]
-	public void StatusText_IsCuedWithName_WhenSongSelected() {
+	public void StatusText_IsShowLoaded_WhenSongSelectedButNoPlaybackEngine() {
+		// Without a PlaybackEngine the state never advances beyond Idle,
+		// so selecting a song does not produce a "Cued:" message.
 		LoadBlankShow();
 		var row = AddSongManually("Opener");
 		_vm.SelectedSong = row.Song;
 
-		Assert.Equal("Cued: Opener", _vm.StatusText);
+		Assert.Equal("Show loaded — select a song to cue", _vm.StatusText);
 	}
 
 	// ── WindowTitle ───────────────────────────────────────────────────────────

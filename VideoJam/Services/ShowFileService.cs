@@ -15,12 +15,12 @@ namespace VideoJam.Services;
 /// </para>
 /// <para>
 /// All file paths within the JSON (<see cref="SongEntry.FolderPath"/>,
-/// <see cref="Show.FallbackImages"/> values) are stored as paths relative to the
+/// <see cref="Show.FallbackImagePath"/>) are stored as paths relative to the
 /// <c>.show</c> file's directory, using forward slashes.
 /// </para>
 /// </remarks>
 internal sealed class ShowFileService {
-	private const int SupportedVersion = 1;
+	private const int SupportedVersion = 2;
 
 	// UTF-8 without BOM — never emit a BOM in files we write.
 	private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
@@ -93,6 +93,13 @@ internal sealed class ShowFileService {
 		using (doc) {
 			ValidateDocument(doc.RootElement, filePath);
 
+			// Migrate older schema versions at the JSON level before deserialisation,
+			// since the obsolete properties no longer exist on the C# model classes.
+			int version = doc.RootElement.GetProperty("version").GetInt32();
+			if (version < SupportedVersion) {
+				bytes = MigrateToCurrentVersion(doc.RootElement, version);
+			}
+
 			Show? show = JsonSerializer.Deserialize<Show>(bytes.Span, JsonOptions);
 			if (show is null) {
 				throw new ShowFileException($"The show file at '{filePath}' deserialised to null.");
@@ -114,23 +121,19 @@ internal sealed class ShowFileService {
 					? entry.FolderPath
 					: PathResolver.MakeRelative(entry.FolderPath, showDirectory),
 				Name = entry.Name,
-				DisplayRoutingOverrides = new Dictionary<string, int>(entry.DisplayRoutingOverrides),
 				Channels = new Dictionary<string, ChannelSettings>(entry.Channels),
 			})
 			.ToList();
 
-		var fallbackImages = show.FallbackImages
-			.ToDictionary(
-				kvp => kvp.Key,
-				kvp => string.IsNullOrEmpty(kvp.Value)
-					? kvp.Value
-					: PathResolver.MakeRelative(kvp.Value, showDirectory));
+		string? fallbackImagePath = string.IsNullOrEmpty(show.FallbackImagePath)
+			? show.FallbackImagePath
+			: PathResolver.MakeRelative(show.FallbackImagePath, showDirectory);
 
 		return new Show {
 			Version = show.Version,
 			Songs = songs,
-			GlobalDisplayRouting = new Dictionary<string, int>(show.GlobalDisplayRouting),
-			FallbackImages = fallbackImages,
+			FallbackImagePath = fallbackImagePath,
+			VideoWindowLayouts = new Dictionary<int, VideoWindowLayout>(show.VideoWindowLayouts),
 		};
 	}
 
@@ -158,20 +161,122 @@ internal sealed class ShowFileService {
 				$"The show file at '{filePath}' is missing the required 'version' field.");
 		}
 
-		if (!versionEl.TryGetInt32(out int version) || version != SupportedVersion) {
+		if (!versionEl.TryGetInt32(out int version) || version < 1) {
 			throw new ShowFileException(
-				$"The show file at '{filePath}' has unsupported version '{versionEl}'. " +
-				$"Only version {SupportedVersion} is supported.");
+				$"The show file at '{filePath}' has unsupported version '{versionEl}'.");
+		}
+
+		if (version > SupportedVersion) {
+			throw new ShowFileException(
+				"This show file requires a newer version of VideoJam.");
 		}
 
 		if (!root.TryGetProperty("songs", out _)) {
 			throw new ShowFileException(
 				$"The show file at '{filePath}' is missing the required 'songs' field.");
 		}
+	}
 
-		if (!root.TryGetProperty("globalDisplayRouting", out _)) {
-			throw new ShowFileException(
-				$"The show file at '{filePath}' is missing the required 'globalDisplayRouting' field.");
+	/// <summary>
+	/// Migrates the JSON object from an older schema version up to
+	/// <see cref="SupportedVersion"/>, returning the updated JSON bytes.
+	/// </summary>
+	/// <remarks>
+	/// Migration is performed at the JSON level because the obsolete properties
+	/// no longer exist on the C# model classes.
+	/// </remarks>
+	private static ReadOnlyMemory<byte> MigrateToCurrentVersion(JsonElement root, int fromVersion) {
+		// Build a mutable dictionary from the root object so we can add/remove properties.
+		var obj = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+		foreach (var prop in root.EnumerateObject())
+			obj[prop.Name] = prop.Value;
+
+		// v1 → v2 state collected before the write pass.
+		string? migratedFallbackImagePath = null;
+
+		if (fromVersion == 1) {
+			// v1 → v2:
+			// - Remove globalDisplayRouting
+			// - Remove displayRoutingOverrides from each song entry
+			// - If fallbackImages dict has entries, take the first value as fallbackImagePath
+			// - Add empty videoWindowLayouts
+			// - Bump version to 2
+
+			obj.Remove("globalDisplayRouting");
+
+			// Migrate fallbackImages → fallbackImagePath (take first value if any).
+			if (obj.TryGetValue("fallbackImages", out JsonElement fallbackImagesEl)
+			    && fallbackImagesEl.ValueKind == JsonValueKind.Object) {
+				foreach (var entry in fallbackImagesEl.EnumerateObject()) {
+					migratedFallbackImagePath = entry.Value.GetString();
+					break;
+				}
+			}
+			obj.Remove("fallbackImages");
+
+			// Re-write each song entry without displayRoutingOverrides.
+			if (obj.TryGetValue("songs", out JsonElement songsEl)
+			    && songsEl.ValueKind == JsonValueKind.Array) {
+				using var buffer = new System.IO.MemoryStream();
+				using (var writer = new Utf8JsonWriter(buffer)) {
+					writer.WriteStartArray();
+					foreach (var songEl in songsEl.EnumerateArray()) {
+						writer.WriteStartObject();
+						foreach (var prop in songEl.EnumerateObject()) {
+							if (prop.Name.Equals("displayRoutingOverrides", StringComparison.OrdinalIgnoreCase))
+								continue;
+							prop.WriteTo(writer);
+						}
+						writer.WriteEndObject();
+					}
+					writer.WriteEndArray();
+				}
+				// Re-parse the cleaned songs array so we can store it back in obj.
+				var cleanSongsDoc = JsonDocument.Parse(buffer.ToArray());
+				obj["songs"] = cleanSongsDoc.RootElement.Clone();
+			}
 		}
+
+		// Write the migrated document back to JSON bytes.
+		using var outStream = new System.IO.MemoryStream();
+		using (var writer = new Utf8JsonWriter(outStream)) {
+			writer.WriteStartObject();
+
+			// Emit version bumped to SupportedVersion.
+			writer.WriteNumber("version", SupportedVersion);
+
+			// Emit songs (already cleaned above for v1 migration).
+			if (obj.TryGetValue("songs", out JsonElement migratedSongs)) {
+				writer.WritePropertyName("songs");
+				migratedSongs.WriteTo(writer);
+			}
+
+			if (fromVersion == 1) {
+				// Emit fallbackImagePath only if a value was extracted from the old dict.
+				if (migratedFallbackImagePath is not null)
+					writer.WriteString("fallbackImagePath", migratedFallbackImagePath);
+
+				// Emit empty videoWindowLayouts.
+				writer.WritePropertyName("videoWindowLayouts");
+				writer.WriteStartObject();
+				writer.WriteEndObject();
+			}
+
+			// Pass through any other properties not already explicitly emitted.
+			foreach (var kvp in obj) {
+				var key = kvp.Key;
+				if (key.Equals("version", StringComparison.OrdinalIgnoreCase)) continue;
+				if (key.Equals("songs", StringComparison.OrdinalIgnoreCase)) continue;
+				if (fromVersion == 1 &&
+				    (key.Equals("fallbackImagePath", StringComparison.OrdinalIgnoreCase) ||
+				     key.Equals("videoWindowLayouts", StringComparison.OrdinalIgnoreCase))) continue;
+				writer.WritePropertyName(key);
+				kvp.Value.WriteTo(writer);
+			}
+
+			writer.WriteEndObject();
+		}
+
+		return outStream.ToArray();
 	}
 }
