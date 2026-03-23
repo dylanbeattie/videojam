@@ -14,5 +14,6 @@
         <!-- Fallback PNG image (shown when no video is assigned to this display,
              or between songs). Sits above VlcHost in Z-order. -->
         <Image x:Name="FallbackImage" Stretch="Uniform" />
+
     </Grid>
 </Window>

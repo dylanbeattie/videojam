@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -79,6 +80,18 @@ public partial class VlcDisplayWindow : Window {
 	/// even when the window is currently maximised.
 	/// </summary>
 	public VideoWindowLayout GetLayout() {
+		// If the window is in fullscreen, return the saved pre-fullscreen layout
+		// so that persisted positions are never polluted with fullscreen dimensions.
+		if (_isFullscreen) {
+			return new VideoWindowLayout {
+				Left = _preFullscreenLeft,
+				Top = _preFullscreenTop,
+				Width = _preFullscreenWidth,
+				Height = _preFullscreenHeight,
+				IsMaximised = _preFullscreenState == WindowState.Maximized,
+			};
+		}
+
 		var bounds = WindowState == WindowState.Maximized
 			? RestoreBounds
 			: new Rect(Left, Top, Width, Height);
@@ -124,10 +137,102 @@ public partial class VlcDisplayWindow : Window {
 
 	// ── Private helpers ───────────────────────────────────────────────────────
 
+	// ── Win32 interop ─────────────────────────────────────────────────────────
+
+	/// <summary>
+	/// Sent to a parent window when a child window receives a mouse button event.
+	/// LibVLC creates a native child window; WPF events never fire on it, but
+	/// WM_PARENTNOTIFY reliably propagates to the parent HWND.
+	/// </summary>
+	private const int WM_PARENTNOTIFY = 0x0210;
+
+	/// <summary>Left mouse button down — the low word of WM_PARENTNOTIFY wParam.</summary>
+	private const int WM_LBUTTONDOWN = 0x0201;
+
+	[DllImport("user32.dll")]
+	private static extern uint GetDoubleClickTime();
+
+	// ── Private state ─────────────────────────────────────────────────────────
+
 	private bool _forceClose;
+	private bool _isFullscreen;
+
+	/// <summary>Timestamp of the last single click on the VLC surface, for manual double-click detection.</summary>
+	private DateTime _lastVlcClickTime = DateTime.MinValue;
+	private double _preFullscreenLeft;
+	private double _preFullscreenTop;
+	private double _preFullscreenWidth;
+	private double _preFullscreenHeight;
+	private WindowState _preFullscreenState;
+
+	/// <summary>
+	/// Toggles between windowed and true fullscreen mode.
+	/// Fullscreen is achieved by setting <see cref="WindowStyle"/> to <c>None</c>,
+	/// <see cref="ResizeMode"/> to <c>NoResize</c>, and <see cref="WindowState"/> to
+	/// <c>Maximized</c> — covering the full physical display including the taskbar.
+	/// Exit restores the exact pre-fullscreen bounds and window state.
+	/// </summary>
+	private void ToggleFullscreen() {
+		if (!_isFullscreen) {
+			// Capture current windowed state before making any changes.
+			_preFullscreenLeft = Left;
+			_preFullscreenTop = Top;
+			_preFullscreenWidth = Width;
+			_preFullscreenHeight = Height;
+			_preFullscreenState = WindowState;
+
+			// Enter fullscreen: chrome must be removed before maximising
+			// so the window covers the taskbar.
+			WindowStyle = WindowStyle.None;
+			ResizeMode = ResizeMode.NoResize;
+			WindowState = WindowState.Maximized;
+			_isFullscreen = true;
+		} else {
+			// Exit fullscreen: WindowState must be set to Normal before
+			// restoring WindowStyle, otherwise WPF miscalculates the restore position.
+			WindowState = WindowState.Normal;
+			WindowStyle = WindowStyle.SingleBorderWindow;
+			ResizeMode = ResizeMode.CanResize;
+			Left = _preFullscreenLeft;
+			Top = _preFullscreenTop;
+			Width = _preFullscreenWidth;
+			Height = _preFullscreenHeight;
+			WindowState = _preFullscreenState;
+			_isFullscreen = false;
+		}
+	}
 
 	private void OnLoaded(object sender, RoutedEventArgs e) {
 		Hwnd = new WindowInteropHelper(this).Handle;
+		// Hook the Win32 message pump so we can detect double-clicks on the native
+		// LibVLC child window, which swallows all WPF mouse events.
+		HwndSource.FromHwnd(Hwnd)?.AddHook(WndProc);
+	}
+
+	/// <summary>
+	/// Win32 message hook. Intercepts <c>WM_PARENTNOTIFY</c> to detect double-clicks
+	/// on the LibVLC child window, which is a native Win32 surface invisible to WPF.
+	/// </summary>
+	private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled) {
+		if (msg == WM_PARENTNOTIFY && (wParam.ToInt32() & 0xFFFF) == WM_LBUTTONDOWN) {
+			var now = DateTime.UtcNow;
+			if ((now - _lastVlcClickTime).TotalMilliseconds <= GetDoubleClickTime()) {
+				ToggleFullscreen();
+				_lastVlcClickTime = DateTime.MinValue;
+			} else {
+				_lastVlcClickTime = now;
+			}
+		}
+		return IntPtr.Zero;
+	}
+
+	/// <summary>
+	/// Handles double-click to toggle fullscreen. This is view-lifecycle glue;
+	/// no business logic resides here.
+	/// </summary>
+	protected override void OnMouseDoubleClick(MouseButtonEventArgs e) {
+		ToggleFullscreen();
+		e.Handled = true;
 	}
 
 	/// <inheritdoc />
