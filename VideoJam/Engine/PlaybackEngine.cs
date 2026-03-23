@@ -116,11 +116,30 @@ internal sealed class PlaybackEngine : IDisposable {
 		_cuedSongIndex = -1;
 		_show = show;
 		LoadFallbackImage();
+		foreach (var window in _videoWindows.Values)
+			window.Dispatcher.Invoke(() => window.ShowFallback(_fallbackImage));
 		SetState(PlaybackState.Idle);
 	}
 
 	/// <summary>Current playback state machine state.</summary>
 	public PlaybackState State => _state;
+
+	/// <summary>
+	/// Updates the fallback image used by all video windows.
+	/// Call this immediately after the operator selects a new fallback image so that
+	/// already-open windows refresh without requiring a song cue.
+	/// </summary>
+	/// <param name="absolutePath">
+	/// The absolute file-system path to the new fallback PNG,
+	/// or <see langword="null"/> to clear the fallback (windows will show solid black).
+	/// </param>
+	public void SetFallbackImage(string? absolutePath) {
+		ObjectDisposedException.ThrowIf(_disposed, this);
+		_show.FallbackImagePath = absolutePath;
+		LoadFallbackImage();
+		foreach (var window in _videoWindows.Values)
+			window.Dispatcher.Invoke(() => window.ShowFallback(_fallbackImage));
+	}
 
 	/// <summary>
 	/// 0-based index into <see cref="Show.Songs"/> of the currently cued song,

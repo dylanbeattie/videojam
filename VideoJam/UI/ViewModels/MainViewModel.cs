@@ -555,6 +555,9 @@ internal sealed class MainViewModel : INotifyPropertyChanged, IDisposable {
 		_loadedShow.FallbackImagePath = _showFilePath is not null
 			? PathResolver.MakeRelative(path, Path.GetDirectoryName(_showFilePath)!)
 			: path;
+		// Propagate the absolute path to the engine immediately so open windows update
+		// without waiting for the next UpdateShow() call.
+		_playbackEngine?.SetFallbackImage(path);
 		OnPropertyChanged(nameof(FallbackImageDisplay));
 		MarkDirty();
 	}
